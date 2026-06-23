@@ -6,7 +6,7 @@
 // The encoder class is a simple interface which counts and stores an encoders count.
 // Encoder pin 1 is attached to the interupt on the arduino and used to trigger the count.
 // Encoder pin 2 is attached to any digital pin and used to derrive rotation direction.
-// The count is stored as a volatile variable due to the high frequency updates. 
+// The count is stored as a volatile variable due to the high frequency updates.
 class Encoder {
 public:
     Encoder(uint8_t enc1, uint8_t enc2) : encoder1_pin(enc1), encoder2_pin(enc2) {
@@ -16,7 +16,7 @@ public:
 
         // TODO: attach the interrupt on pin one such that it calls the readEncoderISR function on a rising edge
         attachInterrupt(digitalPinToInterrupt(encoder1_pin), readEncoderISR, RISING);
-    }   
+    } 
 
 
     // Encoder function used to update the encoder

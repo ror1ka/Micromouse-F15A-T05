@@ -4,7 +4,7 @@
 
 #include "math.h"
 
-// The motor class is a simple interface designed to assist in motor control
+// The motor class is a simple interface ardudesigned to assist in motor control
 // You may choose to impliment additional functionality in the future such as dual motor or speed control
 class Motor {
 public:
