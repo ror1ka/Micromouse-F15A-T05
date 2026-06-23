@@ -9,14 +9,22 @@
 // The count is stored as a volatile variable due to the high frequency updates.
 class Encoder {
 public:
-    Encoder(uint8_t enc1, uint8_t enc2) : encoder1_pin(enc1), encoder2_pin(enc2) {
-        instance = this;  // Store the instance pointer
+    Encoder(uint8_t enc1, uint8_t enc2, int n) : encoder1_pin(enc1), encoder2_pin(enc2) {
         pinMode(encoder1_pin, INPUT_PULLUP);
         pinMode(encoder2_pin, INPUT_PULLUP);
 
-        // TODO: attach the interrupt on pin one such that it calls the readEncoderISR function on a rising edge
-        attachInterrupt(digitalPinToInterrupt(encoder1_pin), readEncoderISR, RISING);
-    } 
+        if (n == 1) {
+            instance1 = this;
+            attachInterrupt(digitalPinToInterrupt(encoder1_pin), readEncoderISR1, RISING);
+        } else if (n == 2) {
+            instance2 = this;
+            attachInterrupt(digitalPinToInterrupt(encoder1_pin), readEncoderISR2, RISING);
+        }
+    }
+
+    void begin(void (*isr)()) {
+        attachInterrupt(digitalPinToInterrupt(encoder1_pin), isr, RISING);
+    }
 
 
     // Encoder function used to update the encoder
@@ -26,10 +34,10 @@ public:
         // NOTE: DO NOT PLACE SERIAL PRINT STATEMENTS IN THIS FUNCTION
         // NOTE: DO NOT CALL THIS FUNCTION MANUALLY IT WILL ONLY WORK IF CALLED BY THE INTERRUPT
         // TODO: Increase or Decrease the count by one based on the reading on encoder pin 2'
-        if (digitalRead(encoder2_pin) == 1) {
-            count++;
-        } else if (digitalRead(encoder2_pin) == 0) {
+        if (digitalRead(encoder2_pin) == HIGH) {
             count--;
+        } else if (digitalRead(encoder2_pin) == LOW) {
+            count++;
         }
 
         interrupts();
@@ -48,9 +56,15 @@ public:
     }
 
 private:
-    static void readEncoderISR() {
-        if (instance != nullptr) {
-            instance->readEncoder();
+    static void readEncoderISR1() {
+        if (instance1 != nullptr) {
+            instance1->readEncoder();
+        }
+    }
+
+    static void readEncoderISR2() {
+        if (instance2 != nullptr) {
+            instance2->readEncoder();
         }
     }
 
@@ -59,13 +73,15 @@ public:
     const uint8_t encoder2_pin;
     volatile int8_t direction;
     float position = 0;
-    uint16_t counts_per_revolution = 1458; //TODO: Identify how many encoder counts are in one rotation
+    uint16_t counts_per_revolution = 700;
     volatile long count = 0;
     uint32_t prev_time;
     bool read = false;
 
 private:
-    static Encoder* instance;
+    static Encoder* instance1;
+    static Encoder* instance2;
 };
 
-Encoder* Encoder::instance = nullptr;
+Encoder* Encoder::instance1 = nullptr;
+Encoder* Encoder::instance2 = nullptr;
