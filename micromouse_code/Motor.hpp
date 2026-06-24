@@ -9,7 +9,6 @@
 class Motor {
 public:
     Motor( uint8_t pwm_pin, uint8_t in2) :  pwm_pin(pwm_pin), dir_pin(in2) {
-        // TODO: Set both pins as output
         pinMode(pwm_pin, OUTPUT);
         pinMode(dir_pin, OUTPUT);
     }
@@ -17,7 +16,6 @@ public:
 
     // This function outputs the desired motor direction and the PWM signal.
     // NOTE: a pwm signal > 255 could cause troubles as such ensure that pwm is clamped between 0 - 255.
-
     void setPWM(int16_t pwm) {
         pwm = constrain(pwm, -255, 255);
 
@@ -28,9 +26,6 @@ public:
             digitalWrite(dir_pin, LOW);    // or HIGH, depending on wiring
             analogWrite(pwm_pin, -pwm);
         }
-
-      // TODO: Output digital direction pin based on if input signal is positive or negative.
-      // TODO: Output PWM signal between 0 - 255.
     }
 
 private:
