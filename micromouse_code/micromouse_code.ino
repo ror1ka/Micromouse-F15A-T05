@@ -3,38 +3,51 @@
 #include "PIDController.hpp"
 #include "Encoder.hpp"
 #include "BangBangController.hpp"
-
-#define MOT1PWM 11
-#define MOT1DIR 12
-#define MOT2PWM 9
-#define MOT2DIR 10
-Motor motor1(MOT1PWM,MOT1DIR);
-Motor motor2(MOT2PWM,MOT2DIR);
-
-#define EN1_A 2 // PIN 2 is an interupt
-#define EN1_B 7
-#define EN2_A 3 // PIN 3 is an interupt
-#define EN2_B 8
-Encoder encoder1(EN1_A, EN1_B, 1);
-Encoder encoder2(EN2_A, EN2_B, 2);
+#include "Micromouse.hpp"
 
 #define BAUD 9600
-PIDController posPID(1.0, 0.0, 0.1);
 
+PIDController posPID(1.5, 1.0, 0.0);
+Micromouse mouse(posPID);
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUD);
+
+  delay(1000);
 }
 
 void loop() {
+  // Serial.println(String("ENC1: ") + mouse.getEncoder(2).getRotation());
+  mouse.travelDistance(200, 50);
+
+  delay(1000);
+
+  mouse.turnLeft(50);
+  delay(1000);
+  mouse.turnLeft(50);
+  delay(1000);
+  mouse.turnLeft(50);
+  delay(1000);
+  mouse.turnLeft(50);
+  delay(1000);
+  mouse.turnRight(50);
+  delay(1000);
+  mouse.turnRight(50);
+  delay(1000);
+  mouse.turnRight(50);
+  delay(1000);
+  mouse.turnRight(50);
+  delay(1000);
+
+
+  // delay(1000);
+
   // // put your main code here, to run repeatedly:
   // encoder1.readEncoder();
-  Serial.print("ENC1: ") + Serial.println(encoder1.count);
+  // Serial.print("ENC1: ") + Serial.println(encoder1.count);
   // Serial.print("ENC2: ") + Serial.println(encoder2.count);
-
-  // Hard coded section
-  // Move forward
+  // // Move forward
   // motor1.setPWM(50);
   // motor2.setPWM(-50);
 
@@ -51,6 +64,18 @@ void loop() {
   // motor2.setPWM(50);
 
   // delay(1500);
+
+  //   // Stop
+  // motor1.setPWM(0);
+  // motor2.setPWM(0);
+
+  // delay(2000);
+
+  // // Record Turns
+  // Serial.print("ENC1: ") + Serial.println(encoder1.count);
+  //   // Turn arround
+
+  // delay(1600);
 
   //   // Stop
   // motor1.setPWM(0);
