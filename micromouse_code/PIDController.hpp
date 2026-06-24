@@ -27,7 +27,7 @@ public:
     }
 
     // Function used to return the last calculated error.
-    // The error is the difference between the desired position and current position. 
+    // The error is the difference between the desired position and current position.
     void tune(float p, float i, float d) {
         kp = p;
         ki = i;
