@@ -48,11 +48,14 @@ public:
 
         // TODO: Convert encoder count to radians
         // Task 3 - Find amount radians turned
-        // return static_cast<float>(count) / counts_per_revolution * 2 * 3.14f;
+        return static_cast<float>(count) / counts_per_revolution * 2 * PI;
+        // return count;
 
         // Task 2 - Find counts_per_revolution
-        return count;
+    }
 
+    void resetCount() {
+        count = 0;
     }
 
 private:
