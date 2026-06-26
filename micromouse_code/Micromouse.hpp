@@ -6,12 +6,15 @@
 #include "Encoder.hpp"
 #include "BangBangController.hpp"
 #include "MicromouseData.hpp"
+#include "Wire.h"
+#include <MPU6050_light.h>
 
 #define LEFT 1
 #define RIGHT 2
-#define WHEEL_TURN 4.8
-#define WHEEL_TURN_ERR 0.2
+#define WHEEL_TURN 4.873
+#define WHEEL_TURN_ERR 0.25
 #define DIST_ERR 5
+#define Dist_OFFSET 1
 
 #define PI radians(180)
 
@@ -19,6 +22,7 @@ class Micromouse {
 public:
     Micromouse(PIDController pid) : pid(pid) {}
 
+    // Helper Funct
     void turnMotorLeft(int16_t speed) {
       leftMotor.setPWM(speed);
       rightMotor.setPWM(speed);
@@ -29,7 +33,25 @@ public:
       rightMotor.setPWM(-speed);
     }
 
+    void move(int16_t speed) {
+      leftMotor.setPWM(-speed);
+      rightMotor.setPWM(speed);
+    }
 
+    // void setupIMU() {
+    //   byte status = getIMU().begin();
+    //   Serial.print(F("MPU6050 status: "));
+    //   Serial.println(status);
+    //   while(status!=0){ } // stop everything if could not connect to MPU6050
+
+    //   Serial.println(F("Calculating offsets, do not move MPU6050"));
+    //   delay(1000);
+    //   // mpu.upsideDownMounting = true; // uncomment this line if the MPU6050 is mounted upside-down
+    //   getIMU().calcOffsets(); // gyro and accelero
+    //   Serial.println("Done!\n");
+    // }
+
+    // Main Func
     void turnLeft(int16_t speed) {
       resetEnc();
       pid.zeroAndSetTarget(leftEncoder.getRotation(), -WHEEL_TURN);
@@ -38,7 +60,7 @@ public:
           if (pid.getError() < -WHEEL_TURN_ERR) {
             turnMotorLeft(speed);
           } else {
-            turnMotorLeft(speed * abs(pid.getError())/WHEEL_TURN_ERR + 5);
+            turnMotorLeft(speed * abs(pid.getError())/WHEEL_TURN_ERR + 10);
           }
           // Serial.println(String("Err: ") + pid.getError());
           pid.compute(leftEncoder.getRotation());
@@ -55,7 +77,7 @@ public:
           if (pid.getError() > WHEEL_TURN_ERR) {
             turnMotorRight(speed);
           } else {
-            turnMotorRight(speed * pid.getError()/WHEEL_TURN_ERR + 5);
+            turnMotorRight(speed * pid.getError()/WHEEL_TURN_ERR + 10);
           }
           // Serial.println(String("Err: ") + pid.getError());
           pid.compute(leftEncoder.getRotation());
@@ -64,15 +86,10 @@ public:
       turnMotorRight(0);
     }
 
-    void move(int16_t speed) {
-        leftMotor.setPWM(-speed);
-        rightMotor.setPWM(speed);
-    }
-
     // dist in mm
     void travelDistance(uint16_t dist, int16_t speed) {
         resetEnc();
-        pid.zeroAndSetTarget(getCurrDist(), dist);
+        pid.zeroAndSetTarget(getCurrDist(), dist - Dist_OFFSET);
         pid.compute(getCurrDist());
         Serial.println(String("Dist: ") + getCurrDist());
         while(pid.getError() > 0) {
@@ -88,6 +105,8 @@ public:
         move(0);
     }
 
+
+    // Get Func for debugging purposes
     Encoder getEncoder(int num) {
       if (num == LEFT) {
         return leftEncoder;
@@ -95,6 +114,10 @@ public:
         return rightEncoder;
       }
     }
+
+    // MPU6050 getIMU() {
+    //   return mpu;
+    // }
 
     Motor getLeftMotor() {
       return leftMotor;
@@ -114,6 +137,7 @@ private:
     Encoder leftEncoder = Encoder(EN1_A, EN1_B, LEFT);
     Encoder rightEncoder = Encoder(EN2_A, EN2_B, RIGHT);
     PIDController pid;
+    // MPU6050 mpu(Wire);
 
     void resetEnc() {
       leftEncoder.resetCount();
