@@ -15,7 +15,6 @@ public:
 
         error = setpoint - (input - zero_ref);
 
-        // TODO: IMPLIMENT PID CONTROLLER
         proportional = error;
         integral = integral + error * dt;
         derivative = (error - prev_error) / dt;
