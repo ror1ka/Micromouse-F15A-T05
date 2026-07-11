@@ -24,7 +24,7 @@ public:
   Micromouse(PIDController pid)
     : pid(pid) {}
 
-  // Helper Funct
+  // Helper Functions //
   void turnMotorLeft(int16_t speed) {
     leftMotor.setPWM(speed);
     rightMotor.setPWM(speed);
@@ -40,6 +40,7 @@ public:
     rightMotor.setPWM(speed);
   }
 
+  // Setup Code //
   void setupIMU() {
     byte status = mpu.begin();
     Serial.print(F("MPU6050 status: "));
@@ -53,10 +54,8 @@ public:
     Serial.println("Done!\n");
   }
 
-  // Main Func
-  void turnLeft(int16_t speed) {
-    const float target = getRot() + 90;
-    const float err = target - ROT_ERR;
+  // Main Functions //
+  void turnLeft(int16_t speed, float target, float err) {
     while (getRot() < target) {
       mpu.update();
 
@@ -74,11 +73,10 @@ public:
     }
 
     turnMotorLeft(0);
+    prevRot = getRot();
   }
 
-  void turnRight(int16_t speed) {
-    float target = getRot() - 90;
-    const float err = target + ROT_ERR;
+  void turnRight(int16_t speed, float target, float err) {
     while (getRot() > target) {
       mpu.update();
 
@@ -96,6 +94,27 @@ public:
     }
 
     turnMotorRight(0);
+    prevRot = getRot();
+  }
+
+  // Turn to desired angle
+  void turnAngle(int16_t speed, float angle) {
+    float target = getRot() + angle;
+    float err = target;
+
+    // Add correct error towards target
+    if (angle > 0) {
+      err -= ROT_ERR;
+    } else {
+      err += ROT_ERR;
+    }
+
+    // If more turn right, else turn left
+    if (getRot() > target) {
+      turnRight(speed, target, err);
+    } else {
+      turnLeft(speed, target, err);
+    }
   }
 
   // dist in mm
@@ -117,8 +136,24 @@ public:
     move(0);
   }
 
+  void turnDesiredAngle(int16_t speed, float desired) {
+    mpu.update();
 
-  // Get Func for debugging purposes
+    Serial.print("\tCurrRot : ");
+    Serial.println(getRot());
+    Serial.print("\tDesired : ");
+    Serial.println(desired);
+
+    if (getRot() < desired + 1 && desired > getRot() - 1) {
+      return;
+    }
+
+    if (getRot() > desired + 1 || getRot() < desired - 1) {
+      turnAngle(speed, desired);
+    }
+  }
+
+  // Get Functions //
   Encoder getEncoder(int num) {
     if (num == LEFT) {
       return leftEncoder;
@@ -137,6 +172,10 @@ public:
 
   float getCurrDist() {
     return abs(leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
+  }
+
+  float getPrevRot() {
+    return prevRot;
   }
 
   void printIMU() {
@@ -169,4 +208,5 @@ private:
   int wheelDiameter = 32;
   int rotCount = 500;
   uint16_t counts_per_revolution = 1400;
+  float prevRot = 0;
 };
