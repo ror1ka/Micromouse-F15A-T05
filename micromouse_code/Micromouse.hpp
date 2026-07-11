@@ -139,6 +139,12 @@ public:
     return abs(leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
   }
 
+  float getCurrAvgDist() {
+    float leftDist = abs(leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    float rightDist = abs(rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    return (leftDist + rightDist)/2;
+  }
+
   void printIMU() {
     Serial.print("\tZ : ");
     Serial.println(mpu.getAngleZ());
@@ -148,8 +154,90 @@ public:
     return mpu.getAngleZ();
   }
 
+  // Thom Task 3 Tracking 1 metre line
   void task3_Tracking() {
-    
+    // Target distance in mm
+    float targetDist {1000.0f};
+    float angleDeadband {0.5f};
+    // Proportional constant for angle error correction controller
+    float Kp {2.0f};
+
+    float errorCorrection {0.0f};
+    float maxCorrection {45.0f};
+
+    // PWM speed constants
+    int normalSpeed {90};
+    int slowSpeed {60};
+    int baselinePWM {0};
+
+    int leftSpeed {0};
+    int rightSpeed {0};
+
+    resetEnc();
+    mpu.update();
+    float targetHeading {getRot()};
+    float currentHeading = getRot();
+    float headingError = targetHeading - currentHeading;
+
+    float distanceTravelled = getCurrAvgDist();
+    float remainingDist = targetDist - distanceTravelled;
+
+    while (getCurrAvgDist() < targetDist) {
+      // Heading/angle stuff
+      mpu.update();
+      currentHeading = getRot();
+      headingError = targetHeading - currentHeading;
+
+      // Make heading error within -180 and +180
+      while (headingError < -180) {
+        headingError = headingError + 360;
+      }
+      while (headingError > 180) {
+        headingError = headingError - 360;
+      }
+
+      if (headingError < -angleDeadband || headingError > angleDeadband) {
+        errorCorrection = Kp * headingError;
+      } else {
+        errorCorrection = 0;
+      }
+
+      // Prevent error correction from being too high 
+      if (errorCorrection > maxCorrection) {
+        errorCorrection = maxCorrection;
+      } else if (errorCorrection < -maxCorrection) {
+        errorCorrection = -maxCorrection;
+      }
+
+      // Moving forward stuff
+      distanceTravelled = getCurrAvgDist();
+      remainingDist = targetDist - distanceTravelled;
+      
+      // Slow down in last 10 cm to prevent overshoot
+      if (remainingDist < 100) {
+        baselinePWM = slowSpeed;
+      } else {
+        baselinePWM = normalSpeed;
+      }
+
+      // Ensures PWM within 0 and 255
+      leftSpeed = baselinePWM - errorCorrection;
+      if (leftSpeed < 0) {
+        leftSpeed = 0;
+      } else if (leftSpeed > 255) {
+        leftSpeed = 255;
+      }
+
+      rightSpeed = baselinePWM + errorCorrection;
+      if (rightSpeed < 0) {
+        rightSpeed = 0;
+      } else if (rightSpeed > 255) {
+        rightSpeed = 255;
+      }
+      leftMotor.setPWM(-leftSpeed);
+      rightMotor.setPWM(rightSpeed);
+    }
+    move(0);
   }
 
 private:
