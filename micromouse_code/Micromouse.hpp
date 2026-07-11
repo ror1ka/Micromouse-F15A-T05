@@ -157,7 +157,7 @@ public:
   // Thom Task 3 Tracking 1 metre line
   void task3_Tracking() {
     // Target distance in mm
-    float targetDist {1020.0f};
+    float targetDist {1080.0f};
     float angleDeadband {0.5f};
     // Proportional constant for angle error correction controller
     float Kp {2.0f};
