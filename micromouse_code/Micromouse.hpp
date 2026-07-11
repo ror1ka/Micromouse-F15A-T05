@@ -148,6 +148,10 @@ public:
     return mpu.getAngleZ();
   }
 
+  void task3_Tracking() {
+    
+  }
+
 private:
   Motor leftMotor = Motor(MOT1PWM, MOT1DIR);
   Motor rightMotor = Motor(MOT2PWM, MOT2DIR);
