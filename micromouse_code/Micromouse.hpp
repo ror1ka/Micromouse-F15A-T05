@@ -16,6 +16,7 @@ MPU6050 mpu(Wire);
 #define ROT_ERR 20
 #define DIST_ERR 5
 #define Dist_OFFSET 1
+#define ANGLE_BOUND 2
 
 #define PI radians(180)
 
@@ -60,7 +61,7 @@ public:
       mpu.update();
 
       // Debugging
-      printIMU();
+      // printIMU();
 
       // Serial.print("\tSpeed : ");
       // Serial.println(speed * abs(target - getRot()) / ROT_ERR);
@@ -81,7 +82,7 @@ public:
       mpu.update();
 
       // Debugging
-      printIMU();
+      // printIMU();
 
       // Serial.print("\tSpeed : ");
       // Serial.println(speed * abs(target - getRot()) / ROT_ERR);
@@ -136,20 +137,30 @@ public:
     move(0);
   }
 
-  void turnDesiredAngle(int16_t speed, float desired) {
-    mpu.update();
+  // Task 3 Turning
+  void Task3_Turning() {
+    // Turn clockwise
+    turnAngle(100, -90);
 
-    Serial.print("\tCurrRot : ");
-    Serial.println(getRot());
-    Serial.print("\tDesired : ");
-    Serial.println(desired);
+    // Return to original angle
+    while (true) {
+      mpu.update();
 
-    if (getRot() < desired + 1 && desired > getRot() - 1) {
-      return;
-    }
+      // Debugging
+      // Serial.print("\tCurrRot : ");
+      // Serial.println(getRot());
+      // Serial.print("\tPrevRot : ");
+      // Serial.println(getPrevRot());
 
-    if (getRot() > desired + 1 || getRot() < desired - 1) {
-      turnAngle(speed, desired);
+      // Check if passed boundary
+      if (getPrevRot() > getRot() + ANGLE_BOUND || getPrevRot() < getRot() - ANGLE_BOUND) {
+        Serial.println("TRIGGERED");
+        if (getPrevRot() < getRot()) {
+          turnRight(100, getPrevRot(), getPrevRot() + ROT_ERR);
+        } else if (getPrevRot() > getRot()) {
+          turnLeft(100, getPrevRot(), getPrevRot() - ROT_ERR);
+        }
+      }
     }
   }
 

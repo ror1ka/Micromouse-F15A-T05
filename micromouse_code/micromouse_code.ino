@@ -24,11 +24,5 @@ void setup() {
 
 void loop() {
   // Task 3 Turning
-  // Turn Clockwise
-  mouse.turnAngle(100, -90);
-  delay(1000);
-
-  while(true) {
-    mouse.turnDesiredAngle(100, -90);
-  }
+  mouse.Task3_Turning();
 }
