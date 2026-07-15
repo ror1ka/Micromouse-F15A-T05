@@ -18,6 +18,7 @@ void setup() {
   Wire.begin();
 
   mouse.setupIMU();
+  mouse.setupLidar();
 
   delay(1000);
 }
@@ -26,26 +27,26 @@ void loop() {
   // mouse.travelDistance(200, 100);
 
   // delay(1000);
+  drivingAndStopping();
+  // mouse.turnLeft(100);
+  // delay(1000);
+  // mouse.turnRight(100);
+  // delay(1000);
+  // mouse.turnLeft(100);
+  // delay(1000);
+  // mouse.turnLeft(100);
+  // delay(1000);
+  // mouse.turnLeft(100);
+  // delay(1000);
+  // mouse.turnRight(100);
+  // delay(1000);
+  // mouse.turnRight(100);
+  // delay(1000);
+  // mouse.turnRight(100);
+  // delay(1000);
+  // mouse.turnRight(100);
+  // delay(1000);
 
-  mouse.turnLeft(100);
-  delay(1000);
-  mouse.turnRight(100);
-  delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  
   // while(true) {};
 
   // encoder1.readEncoder();

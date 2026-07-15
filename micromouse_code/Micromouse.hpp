@@ -8,8 +8,10 @@
 #include "MicromouseData.hpp"
 #include "Wire.h"
 #include <MPU6050_light.h>
+#include <VL6180X.h>
 
 MPU6050 mpu(Wire);
+VL6180X sensor;
 
 #define LEFT 1
 #define RIGHT 2
@@ -51,6 +53,11 @@ public:
     // mpu.upsideDownMounting = true; // uncomment this line if the MPU6050 is mounted upside-down
     mpu.calcOffsets();  // gyro and accelero
     Serial.println("Done!\n");
+  }
+  void setupLidar() {
+    sensor.init();
+    sensor.configureDefault();
+    sensor.setTimeout(500);
   }
 
   // Main Func
@@ -116,6 +123,33 @@ public:
 
     move(0);
   }
+void drivingAndStopping() {
+    int currDist = getLidarDistance();
+
+    if (currDist == -1) {
+        return;   
+    }
+    int error = currDist - 100;
+    if (abs(error) <= 5) {
+        move(0);
+        return;
+    }
+
+    if (error > 0){
+        travelDistance(error, 150);
+    } else {
+        travelDistance(-error, -150);
+    }
+}
+int getLidarDistance() {
+  uint8_t rawDistance = sensor.readRangeSingleMillimeters();
+  
+  
+  if (sensor.timeoutOccurred()) {
+      return -1; 
+  }
+  return rawDistance; 
+ }
 
 
   // Get Func for debugging purposes
