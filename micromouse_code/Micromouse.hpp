@@ -148,6 +148,22 @@ public:
     return mpu.getAngleZ();
   }
 
+  void chainMovement(char *chain_string) {
+    for (int i = 0; i < 7; i++) {
+      if (chain_string[i] == "l") {
+        turnLeft(100);
+      }
+
+      if (chain_string[i] == "r") {
+        turnRight(100);
+      }
+
+      if (chain_string[i] == "f") {
+        travelDistance(180, 100);
+      }
+    }
+  }
+  
 private:
   Motor leftMotor = Motor(MOT1PWM, MOT1DIR);
   Motor rightMotor = Motor(MOT2PWM, MOT2DIR);
