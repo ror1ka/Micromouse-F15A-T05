@@ -24,6 +24,8 @@ void setup() {
 
 void loop() {
   // Task 3 Chaining
-  char *s = "lffrflfr"
-  mouse.chainMovement();
+  // char *s = "lffrflfr";
+  mouse.chainMovement("lffrflfr");
+
+  while(true) {}
 }
