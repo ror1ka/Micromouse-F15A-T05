@@ -149,16 +149,16 @@ public:
   }
 
   void chainMovement(char *chain_string) {
-    for (int i = 0; i < 7; i++) {
-      if (chain_string[i] == "l") {
+    for (int i = 0; i <= 7; i++) {
+      if (chain_string[i] == 'l') {
         turnLeft(100);
       }
 
-      if (chain_string[i] == "r") {
+      if (chain_string[i] == 'r') {
         turnRight(100);
       }
 
-      if (chain_string[i] == "f") {
+      if (chain_string[i] == 'f') {
         travelDistance(180, 100);
       }
     }
