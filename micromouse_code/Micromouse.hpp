@@ -151,15 +151,15 @@ public:
   void chainMovement(char *chain_string) {
     for (int i = 0; i <= 7; i++) {
       if (chain_string[i] == 'l') {
-        turnLeft(100);
+        turnLeft(75);
       }
 
       if (chain_string[i] == 'r') {
-        turnRight(100);
+        turnRight(75);
       }
 
       if (chain_string[i] == 'f') {
-        travelDistance(180, 100);
+        travelDistance(180, 75);
       }
     }
   }
