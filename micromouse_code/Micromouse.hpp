@@ -158,7 +158,7 @@ public:
   void task3_Tracking() {
     // Target distance in mm
     float targetDist {1080.0f};
-    float angleDeadband {0.5f};
+    float angleDeadband {0.3f};
     // Proportional constant for angle error correction controller
     float Kp {2.0f};
 
