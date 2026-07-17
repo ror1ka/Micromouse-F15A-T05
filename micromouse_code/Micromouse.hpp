@@ -16,7 +16,7 @@ MPU6050 mpu(Wire);
 #define ROT_ERR 20
 #define DIST_ERR 5
 #define Dist_OFFSET 1
-#define ANGLE_BOUND 2
+#define ANGLE_BOUND 1
 
 #define PI radians(180)
 
@@ -140,7 +140,7 @@ public:
   // Task 3 Turning
   void Task3_Turning() {
     // Turn clockwise
-    turnAngle(100, -90);
+    turnAngle(75, -90);
 
     // Return to original angle
     while (true) {
@@ -156,9 +156,9 @@ public:
       if (getPrevRot() > getRot() + ANGLE_BOUND || getPrevRot() < getRot() - ANGLE_BOUND) {
         Serial.println("TRIGGERED");
         if (getPrevRot() < getRot()) {
-          turnRight(100, getPrevRot(), getPrevRot() + ROT_ERR);
+          turnRight(75, getPrevRot(), getPrevRot() + ROT_ERR);
         } else if (getPrevRot() > getRot()) {
-          turnLeft(100, getPrevRot(), getPrevRot() - ROT_ERR);
+          turnLeft(75, getPrevRot(), getPrevRot() - ROT_ERR);
         }
       }
     }
