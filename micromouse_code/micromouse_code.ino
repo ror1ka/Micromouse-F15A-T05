@@ -23,32 +23,8 @@ void setup() {
 }
 
 void loop() {
-  // mouse.travelDistance(200, 100);
+  // Task 3 Tracking
+  mouse.task3_Tracking();
 
-  // delay(1000);
-
-  mouse.turnLeft(100);
-  delay(1000);
-  mouse.turnRight(100);
-  delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  
-  // while(true) {};
-
-  // encoder1.readEncoder();
-  // Serial.print("ENC1: ") + Serial.println(encoder1.count);
-  // Serial.print("ENC2: ") + Serial.println(encoder2.count);
+  while(true) {}
 }
