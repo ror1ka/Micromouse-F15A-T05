@@ -5,6 +5,7 @@
 #include "BangBangController.hpp"
 #include "Micromouse.hpp"
 #include "Wire.h"
+#include <VL6180X.h>
 
 #define BAUD 115200
 
@@ -18,37 +19,23 @@ void setup() {
   Wire.begin();
 
   mouse.setupIMU();
+  mouse.setupLidar();
 
   delay(1000);
 }
 
 void loop() {
-  // mouse.travelDistance(200, 100);
+  // Task 3 Tracking
+  // mouse.task3_Tracking(1080,100);
 
-  // delay(1000);
+  // Task 3 Driving and Stopping
+  mouse.drivingAndStopping();
 
-  mouse.turnLeft(100);
-  delay(1000);
-  mouse.turnRight(100);
-  delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnLeft(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  // mouse.turnRight(100);
-  // delay(1000);
-  
-  // while(true) {};
+  // Task 3 Turning
+  // mouse.Task3_Turning();
 
-  // encoder1.readEncoder();
-  // Serial.print("ENC1: ") + Serial.println(encoder1.count);
-  // Serial.print("ENC2: ") + Serial.println(encoder2.count);
+  // Task 3 Chain Motion
+  // mouse.chainMovement("frflfflf");
+
+  // while(true) {}
 }
