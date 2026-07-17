@@ -124,13 +124,13 @@ public:
     move(0);
   }
 void drivingAndStopping() {
-    int currDist = getLidarDistance();
+    int currDist = getLidarDistance() - 15;
 
     if (currDist == -1) {
         return;   
     }
     int error = currDist - 100;
-    if (abs(error) <= 5) {
+    if (abs(error) <= 2) {
         move(0);
         return;
     }
