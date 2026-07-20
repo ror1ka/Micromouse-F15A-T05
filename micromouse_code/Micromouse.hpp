@@ -352,6 +352,46 @@ public:
     return static_cast<int>(rawDistance);
   }
 
+  // THOM ADDED FIND MEDIAN CODE
+  int getMedianDistance() {
+    const int numSamples = 5;
+    int lidarReadings[numSamples];
+    int validReadings = 0;
+
+    for (int i {0}; i < numSamples; i++) {
+      int distance = getLidarDistanceFront();
+      if (distance >= 0) {
+        lidarReadings[validReadings] = distance;
+        validReadings++;
+      }
+      delay(5);
+    }
+
+    if (validReadings == 0) {
+      return -1;
+    }
+
+    if (validReadings < 3) {
+      // Not enough valid measurements to find median, just pass in last valid reading
+      return lidarReadings[validReadings - 1];
+    }
+
+    // Sorts the readings into ascending order
+    for (int i {0}; i < validReadings; i++) {
+      for (int j {i + 1}; j < validReadings; j++) {
+        if (lidarReadings[i] > lidarReadings[j]) {
+          int temp = lidarReadings[i];
+          lidarReadings[i] = lidarReadings[j];
+          lidarReadings[j] = temp;
+        }
+      }
+    }
+    // returns median reading in the sorted array
+    return lidarReadings[validReadings/2];
+  }
+
+  // END OF THOM ADDED CODE
+
   // int getLidarDistanceOld() {
   //   uint8_t rawDistance = sensor.readRangeSingleMillimeters();
 
