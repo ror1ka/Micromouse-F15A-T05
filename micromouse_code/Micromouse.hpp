@@ -11,6 +11,7 @@
 #include <VL6180X.h>
 
 MPU6050 mpu(Wire);
+VL6180X sensor;
 
 VL6180X sensorF;
 VL6180X sensorL;
@@ -67,29 +68,43 @@ public:
     Serial.println("Done!\n");
   }
 
+  // AI
   void setupLidar() {
+    // Configure all shutdown/enable pins.
+    pinMode(LIDAR_FRONT, OUTPUT);
+    pinMode(LIDAR_LEFT, OUTPUT);
+    pinMode(LIDAR_RIGHT, OUTPUT);
+
+    // Disable every sensor first so none respond at 0x29.
+    digitalWrite(LIDAR_FRONT, LOW);
+    digitalWrite(LIDAR_LEFT, LOW);
+    digitalWrite(LIDAR_RIGHT, LOW);
+
+    delay(50);
+
+    // Enable and assign addresses one at a time.
     setupSensorLidar(0x30, LIDAR_FRONT, sensorF);
     setupSensorLidar(0x31, LIDAR_LEFT, sensorL);
     setupSensorLidar(0x32, LIDAR_RIGHT, sensorR);
+
+    Serial.println("All LiDARs initialised");
   }
 
-  void setupSensorLidar(uint8_t address, uint8_t xshut_pin, VL6180X sensor) {
-    if (xshut_pin != NO_XSHUT_PIN) {
-      Serial.println("Actually setting up pins");
-      pinMode(xshut_pin, OUTPUT);
-      digitalWrite(xshut_pin, HIGH);
-      delay(10);
-    }
-    sensor.init();
-    sensor.configureDefault();
-    sensor.setTimeout(100);
+  void setupSensorLidar(uint8_t address, uint8_t enablePin, VL6180X& s) {  // Must be passed by reference
+  digitalWrite(enablePin, HIGH);
+  delay(20);
 
-    if (address != DEFAULT_ADDRESS) {
-      sensor.setAddress(address);
-    }
+  s.init();
+  s.configureDefault();
+  s.setTimeout(100);
+  s.setAddress(address);
 
-    Serial.println("Lidars Done");
-  }
+  Serial.print("LiDAR on pin ");
+  Serial.print(enablePin);
+  Serial.print(" assigned address 0x");
+  Serial.println(address, HEX);
+}
+
 
   //////// Main Functions ////////
   void turnLeft(int16_t speed, float target, float err) {
@@ -161,16 +176,104 @@ public:
     pid.compute(getCurrAvgDist());
     Serial.println(String("Dist: ") + getCurrAvgDist());
     while (pid.getError() > 0) {
-      // if (pid.getError() > DIST_ERR) {
-      move(speed);
+      Serial.println(String("Dist: ") + getCurrAvgDist());
+      Serial.println(String("Err: ") + pid.getError());
+      // if (abs(pid.getError()) > DIST_ERR) {
+        move(speed);
       // } else {
-      //   move(speed * pid.getError()/DIST_ERR + 5);
+      //   move((speed * abs(pid.getError())/DIST_ERR) + 5);
       // }
       // Serial.println(String("Err: ") + pid.getError());
       pid.compute(getCurrAvgDist());
     }
 
     move(0);
+  }
+
+  // Attempt to combine Task3_Tracking and PIDController.hpp
+  // Same issue with Task3_Tracking where it can't go backwards
+  // void travelDistanceModified(uint16_t dist, int16_t speed) {
+  //   resetEnc();
+  //   mpu.update();
+  //   pid.zeroAndSetTarget(getCurrAvgDist(), dist - Dist_OFFSET);
+  //   pid.compute(getCurrAvgDist());
+
+  //   float angleDeadband {0.3f};
+  //   float errorCorrection {0.0f};
+  //   float maxCorrection {45.0f};
+
+  //   int leftSpeed {0};
+  //   int rightSpeed {0};
+
+  //   float targetHeading {getRot()};
+  //   float currentHeading = getRot();
+  //   float headingError = targetHeading - currentHeading;
+
+  //   while (pid.getError() > 0) {
+  //     Serial.println(String("Dist: ") + getCurrAvgDist());
+  //     Serial.println(String("Err: ") + pid.getError());
+  //     mpu.update();
+  //     currentHeading = getRot();
+  //     headingError = targetHeading - currentHeading;
+
+  //     while (headingError < -180) {
+  //       headingError = headingError + 360;
+  //     }
+  //     while (headingError > 180) {
+  //       headingError = headingError - 360;
+  //     }
+
+  //     if (headingError < -angleDeadband || headingError > angleDeadband) {
+  //       errorCorrection = 2.0f * headingError;
+  //     } else {
+  //       errorCorrection = 0;
+  //     }
+
+  //     if (errorCorrection > maxCorrection) {
+  //       errorCorrection = maxCorrection;
+  //     } else if (errorCorrection < -maxCorrection) {
+  //       errorCorrection = -maxCorrection;
+  //     }
+
+  //     // Ensures PWM within 0 and 255
+  //     leftSpeed = speed - errorCorrection;
+  //     if (leftSpeed < 0) {
+  //       leftSpeed = 0;
+  //     } else if (leftSpeed > 255) {
+  //       leftSpeed = 255;
+  //     }
+
+  //     rightSpeed = speed + errorCorrection;
+  //     if (rightSpeed < 0) {
+  //       rightSpeed = 0;
+  //     } else if (rightSpeed > 255) {
+  //       rightSpeed = 255;
+  //     }
+  //     leftMotor.setPWM(-leftSpeed);
+  //     rightMotor.setPWM(rightSpeed);
+
+  //     pid.compute(getCurrAvgDist());
+  //   }
+
+  //   move(0);
+  // }
+
+
+  void printLidar() {
+    int frontDistance = getLidarDistanceFront();
+    int leftDistance = getLidarDistanceLeft();
+    int rightDistance = getLidarDistanceRight();
+
+    Serial.print("Left: ");
+    Serial.print(leftDistance);
+
+    Serial.print(" mm\tFront: ");
+    Serial.print(frontDistance);
+
+    Serial.print(" mm\tRight: ");
+    Serial.print(rightDistance);
+
+    Serial.println(" mm");
   }
 
 
@@ -213,14 +316,51 @@ public:
   int getLidarDistanceFront() {
     uint8_t rawDistance = sensorF.readRangeSingleMillimeters();
 
-    Serial.println(rawDistance);
+    // Serial.println(rawDistance);
 
     if (sensorF.timeoutOccurred()) {
-        return -1;
+      Serial.println("Front LiDAR timeout");
+      return -1;
     }
 
     return static_cast<int>(rawDistance);
   }
+
+  int getLidarDistanceLeft() {
+    uint8_t rawDistance = sensorL.readRangeSingleMillimeters();
+
+    // Serial.println(rawDistance);
+
+    if (sensorF.timeoutOccurred()) {
+      Serial.println("Left LiDAR timeout");
+      return -1;
+    }
+
+    return static_cast<int>(rawDistance);
+  }
+
+  int getLidarDistanceRight() {
+    uint8_t rawDistance = sensorR.readRangeSingleMillimeters();
+
+    // Serial.println(rawDistance);
+
+    if (sensorF.timeoutOccurred()) {
+      Serial.println("Right LiDAR timeout");
+      return -1;
+    }
+
+    return static_cast<int>(rawDistance);
+  }
+
+  // int getLidarDistanceOld() {
+  //   uint8_t rawDistance = sensor.readRangeSingleMillimeters();
+
+  //   if (sensor.timeoutOccurred()) {
+  //       return -1;
+  //   }
+
+  //   return rawDistance;
+  // }
 
   //////// Task 3 Functions ////////
 
@@ -312,22 +452,28 @@ public:
   }
 
   void drivingAndStopping() {
-    int currDist = getLidarDistanceFront() - 15;
+    int currDist = getLidarDistanceFront();
+
+    // Serial.println(currDist);
 
     if (currDist == -1) {
         return;
     }
 
     int error = currDist - 100;
-    if (abs(error) <= 5) {
+    if (abs(error) <= 7) {
         move(0);
         return;
     }
 
     if (error > 0){
-        travelDistance(error, 150);
+        travelDistance(error, 75);
+        // travelDistanceModified(error, 75);
+        // task3_Tracking(error, 75);
     } else {
-        travelDistance(-error, -150);
+        travelDistance(-error, -75);
+        // travelDistanceModified(-error, -75);
+        // task3_Tracking(-error, -75);
     }
   }
 

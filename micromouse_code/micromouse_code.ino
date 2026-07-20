@@ -30,12 +30,16 @@ void loop() {
 
   // Task 3 Driving and Stopping
   mouse.drivingAndStopping();
+  // Serial.println("Hello");
 
   // Task 3 Turning
   // mouse.Task3_Turning();
 
   // Task 3 Chain Motion
   // mouse.chainMovement("frflfflf");
+
+  // mouse.printLidar();
+  // delay(500);
 
   // while(true) {}
 }
