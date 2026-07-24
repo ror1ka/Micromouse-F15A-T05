@@ -92,7 +92,7 @@ public:
 
   void setupSensorLidar(uint8_t address, uint8_t enablePin, VL6180X& s) {  // Must be passed by reference
   digitalWrite(enablePin, HIGH);
-  delay(20);
+  delay(50);
 
   s.init();
   s.configureDefault();
@@ -331,7 +331,7 @@ public:
 
     // Serial.println(rawDistance);
 
-    if (sensorF.timeoutOccurred()) {
+    if (sensorL.timeoutOccurred()) {
       Serial.println("Left LiDAR timeout");
       return -1;
     }
@@ -342,9 +342,9 @@ public:
   int getLidarDistanceRight() {
     uint8_t rawDistance = sensorR.readRangeSingleMillimeters();
 
-    // Serial.println(rawDistance);
+    Serial.println(rawDistance);
 
-    if (sensorF.timeoutOccurred()) {
+    if (sensorR.timeoutOccurred()) {
       Serial.println("Right LiDAR timeout");
       return -1;
     }
@@ -352,7 +352,6 @@ public:
     return static_cast<int>(rawDistance);
   }
 
-  // THOM ADDED FIND MEDIAN CODE
   int getMedianDistance() {
     const int numSamples = 5;
     int lidarReadings[numSamples];
@@ -390,24 +389,12 @@ public:
     return lidarReadings[validReadings/2];
   }
 
-  // END OF THOM ADDED CODE
-
-  // int getLidarDistanceOld() {
-  //   uint8_t rawDistance = sensor.readRangeSingleMillimeters();
-
-  //   if (sensor.timeoutOccurred()) {
-  //       return -1;
-  //   }
-
-  //   return rawDistance;
-  // }
-
   //////// Task 3 Functions ////////
 
   // Task 3 Tracking
   void task3_Tracking(float desiredDist, int16_t speed) {
     // Target distance in mm
-    float targetDist {desiredDist + 5.0f};
+    float targetDist {desiredDist};
     float angleDeadband {0.3f};
     // Proportional constant for angle error correction controller
     float Kp {2.0f};
@@ -471,17 +458,17 @@ public:
       // }
       baselinePWM = normalSpeed;
 
-      // Ensures PWM within 0 and 255
+      // Ensures PWM within -255 and 255
       leftSpeed = baselinePWM - errorCorrection;
-      if (leftSpeed < 0) {
-        leftSpeed = 0;
+      if (leftSpeed < -255) {
+        leftSpeed = -255;
       } else if (leftSpeed > 255) {
         leftSpeed = 255;
       }
 
       rightSpeed = baselinePWM + errorCorrection;
-      if (rightSpeed < 0) {
-        rightSpeed = 0;
+      if (rightSpeed < -255) {
+        rightSpeed = -255;
       } else if (rightSpeed > 255) {
         rightSpeed = 255;
       }
@@ -491,29 +478,166 @@ public:
     move(0);
   }
 
-  void drivingAndStopping() {
-    int currDist = getLidarDistanceFront();
+    void Modified_Tracking(float desiredDist, int16_t speed) {
+    // Target distance in mm
+    float targetDist {desiredDist};
+    float angleDeadband {0.3f};
+    // Proportional constant for angle error correction controller
+    float Kp {2.0f};
 
-    // Serial.println(currDist);
+    float errorCorrection {0.0f};
+    float maxCorrection {45.0f};
+
+    // PWM speed constants
+    int normalSpeed {speed};
+    // int slowSpeed {60};
+    int baselinePWM {0};
+
+    int leftSpeed {0};
+    int rightSpeed {0};
+
+    resetEnc();
+    mpu.update();
+    float targetHeading {getRot()};
+    float currentHeading = getRot();
+    float headingError = targetHeading - currentHeading;
+
+    float distanceTravelled = getCurrAvgDist();
+    float remainingDist = targetDist - distanceTravelled;
+
+    while (getCurrAvgDist() < targetDist) {
+      // Heading/angle stuff
+      mpu.update();
+      currentHeading = getRot();
+      headingError = targetHeading - currentHeading;
+
+      // Make heading error within -180 and +180
+      while (headingError < -180) {
+        headingError = headingError + 360;
+      }
+      while (headingError > 180) {
+        headingError = headingError - 360;
+      }
+
+      if (headingError < -angleDeadband || headingError > angleDeadband) {
+        errorCorrection = Kp * headingError;
+      } else {
+        errorCorrection = 0;
+      }
+
+      // Prevent error correction from being too high
+      if (errorCorrection > maxCorrection) {
+        errorCorrection = maxCorrection;
+      } else if (errorCorrection < -maxCorrection) {
+        errorCorrection = -maxCorrection;
+      }
+
+      // Moving forward stuff
+      distanceTravelled = getCurrAvgDist();
+      remainingDist = targetDist - distanceTravelled;
+
+      // Slow down in last 10 cm to prevent overshoot
+      // if (remainingDist < 100) {
+      //   baselinePWM = slowSpeed;
+      // } else {
+      //   baselinePWM = normalSpeed;
+      // }
+      // baselinePWM = normalSpeed;
+
+      baselinePWM = adjustSpeed(normalSpeed, targetDist);
+
+      // Ensures PWM within -255 and 255
+      leftSpeed = baselinePWM - errorCorrection;
+      // if (leftSpeed < -255) {
+      //   leftSpeed = -255;
+      // } else if (leftSpeed > 255) {
+      //   leftSpeed = 255;
+      // }
+
+      rightSpeed = baselinePWM + errorCorrection;
+      // if (rightSpeed < -255) {
+      //   rightSpeed = -255;
+      // } else if (rightSpeed > 255) {
+      //   rightSpeed = 255;
+      // }
+
+      if (normalSpeed > 0) {
+        if (leftSpeed < 30) leftSpeed = 30;
+        if (rightSpeed < 30) rightSpeed = 30;
+        if (leftSpeed > 255) leftSpeed = 255;
+        if (rightSpeed > 255) rightSpeed = 255;
+      } else {
+        if (leftSpeed > -30) leftSpeed = -30;
+        if (rightSpeed > -30) rightSpeed = -30;
+        if (leftSpeed < -255) leftSpeed = -255;
+        if (rightSpeed < -255) rightSpeed = -255;
+      }
+
+      leftMotor.setPWM(-leftSpeed);
+      rightMotor.setPWM(rightSpeed);
+    }
+    move(0);
+  }
+
+  void drivingAndStopping() {
+    int currDist = getMedianDistance();
+    // int currDist = getLidarDistanceFront();
+
+    Serial.print("\tLidar Front: ");
+    Serial.println(currDist);
 
     if (currDist == -1) {
         return;
     }
 
     int error = currDist - 100;
-    if (abs(error) <= 7) {
+    if (abs(error) <= 7.5) {
         move(0);
         return;
     }
 
-    if (error > 0){
-        travelDistance(error, 75);
+    if (error > 0) {
+        // travelDistance(error, 75);
         // travelDistanceModified(error, 75);
-        // task3_Tracking(error, 75);
+        Modified_Tracking(error, 75);
     } else {
-        travelDistance(-error, -75);
+        // travelDistance(-error, -75);
         // travelDistanceModified(-error, -75);
-        // task3_Tracking(-error, -75);
+        Modified_Tracking(abs(error), -75);
+    }
+
+    // if (error > 0) {
+    //   if (error > 20) {
+    //     task3_Tracking(20, 75);
+    //   } else {
+    //     task3_Tracking(error, 30);
+    //   }
+    // } else {
+    //   if (abs(error) > 20) {
+    //     task3_Tracking(20, -75);
+    //   } else {
+    //     task3_Tracking(abs(error), -30);
+    //   }
+    // }
+  }
+
+  int adjustSpeed(int speed, float dist) {
+    int currDist = getCurrAvgDist();
+    int leftover = dist - getCurrAvgDist();
+
+    if (leftover > 30.0f) {
+      return speed;
+    } else {
+      int min = 30;
+      int scale = (speed * leftover) / 30.0f;
+
+      if (speed > 0 && scale < min) {
+        return min;
+      } else if (speed < 0 && speed > -min) {
+        return -min;
+      }
+
+      return scale;
     }
   }
 
