@@ -390,6 +390,8 @@ public:
     resetEnc();
     mpu.update();
     float targetHeading = getRot();
+    // // To include the global heading functionality:
+    // float targetHeading = targetGlobalHeading;
 
     float previousDistanceError = targetDistance - getCurrAvgDist();
     float intError = 0;
@@ -509,6 +511,68 @@ public:
         }
     }
   }
+
+  // Gonna need to be put in the initialisation code to initialise the global heading variable
+  void initialiseGlobalHeading() {
+    mpu.update();
+    targetGlobalHeading = getRot();
+  }
+
+  // Turns the micromouse by "angleToTurn" using a P controller and updates global heading variable
+  void turnToHeading(float angleToTurn, int maxTurningPWM) {
+    float turnKp = 2.0;
+    float angleDeadband = 0.3;
+    int minTurningPWM = 30;
+
+    unsigned long timeWhenInitiallySettled = 0;
+    unsigned long timeBeforeConsideredSettled = 200;
+
+    targetGlobalHeading = targetGlobalHeading + angleToTurn;
+
+    while (true) {
+      unsigned long currentTime = millis();
+      mpu.update();
+      float angleError = normaliseAngle(targetGlobalHeading - getRot());
+      float turningPWM = turnKp * angleError;
+      if (turningPWM > maxTurningPWM) {
+        turningPWM = maxTurningPWM;
+      } else if (turningPWM < -maxTurningPWM) {
+        turningPWM = -maxTurningPWM;
+      }
+
+      // Ensures the PWM is large enough to physically turn
+      if (abs(turningPWM) < minTurningPWM) {
+          if (turningPWM > 0) {
+              turningPWM = minTurningPWM;
+          } else {
+              turningPWM = -minTurningPWM;
+          }
+      }
+
+      // Stops in deadband
+      if (abs(angleError) <= angleDeadband) {
+          turningPWM = 0;
+      }
+
+      setForwardPWMVelocity(-turningPWM, turningPWM);
+
+      // Makes sure it's settled in the deadband rather than travelling through it like with the
+      // travelling straight code
+      if (abs(angleError) <= angleDeadband) {
+          if (timeWhenInitiallySettled == 0) {
+              timeWhenInitiallySettled = currentTime;
+          }
+
+          if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+              setForwardPWMVelocity(0, 0);
+              return;
+          }
+      } else {
+          timeWhenInitiallySettled = 0;
+      }
+    }
+  }
+
 
   int getLidarDistanceFront() {
     uint8_t rawDistance = sensorF.readRangeSingleMillimeters();
@@ -908,4 +972,8 @@ private:
   int rotCount = 500;
   uint16_t counts_per_revolution = 1400;
   float prevRot = 0;
+
+
+  // For the global heading idea
+  float targetGlobalHeading = 0;
 };
