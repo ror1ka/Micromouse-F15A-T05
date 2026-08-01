@@ -520,7 +520,7 @@ public:
 
   // Turns the micromouse by "angleToTurn" using a P controller and updates global heading variable
   // maxTurningPWM should be +ve always and angleToTurn can be +ve or -ve for changing direction
-  void turnToHeading(float angleToTurn, int maxTurningPWM) {
+  void turnByAngle(float angleToTurn, int maxTurningPWM) {
     float turnKp = 2.0;
     float angleDeadband = 0.5;
     int minTurningPWM = 30;
@@ -536,7 +536,7 @@ public:
       maxTurningPWM = minTurningPWM;
     }
 
-    
+
     while (true) {
       unsigned long currentTime = millis();
       mpu.update();
