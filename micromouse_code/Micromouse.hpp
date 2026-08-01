@@ -307,10 +307,207 @@ public:
     return prevRot;
   }
 
+  float getLeftWheelDist() {
+    float leftDist = -(leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    return leftDist;
+  }
+
+  float getRightWheelDist() {
+    float rightDist = (rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    return rightDist;
+  }
+
+  // Returns average distance based on left and right wheel encoder rotation info. 
+  // -ve = backward. +ve = forward
   float getCurrAvgDist() {
-    float leftDist = abs(leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
-    float rightDist = abs(rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
-    return (leftDist + rightDist)/2;
+    return (getLeftWheelDist() + getRightWheelDist())/2;
+  }
+
+  float normaliseAngle(float angle) {
+    while (angle > 180) {
+      angle = angle - 360;
+    }
+
+    while (angle < -180) {
+      angle = angle + 360;
+    }
+
+    return angle;
+  }
+
+  // Makes micromouse go forward when taking in 2 positive PWMs (corrects the fact that both
+  // wheels are in opposite directions). PWMs +ve = forward, PWMs -ve = backward. Also bounds
+  // PWM so doesn't go above or below safe range
+  void setForwardPWMVelocity(int leftPWM, int rightPWM) {
+    if (leftPWM < -255) {
+      leftPWM = -255;
+    } else if (leftPWM > 255) {
+      leftPWM = 255;
+    }
+
+    if (rightPWM < -255) {
+      rightPWM = -255;
+    } else if (rightPWM > 255) {
+      rightPWM = 255;
+    }
+
+    leftMotor.setPWM(-leftPWM);
+    rightMotor.setPWM(rightPWM);
+  }
+
+  // Attempt at a PID controller for distance movement and P controller for heading correction
+  // ONLY USE POSITIVE MAXPWM. Want to go backward: make targetDistance -ve. +ve targetDistance = forward
+  void driveDistanceStraight(float targetDistance, int maxPWM) {
+    const float distanceKp = 1.2f;
+    const float distanceKi = 0.0f;
+    const float distanceKd = 0.25f;
+    const float headingKp = 2.0f;
+
+    // Deadbands (mm & degrees respectively)
+    const float distanceDeadband = 3.0f;   
+    const float headingDeadband = 0.6f;    
+
+    float intLimit = 100.0f; // to get rid of integral windup which Will talked abt in lectures
+
+    // Minimum PWM where it can still move
+    const int minimumMovingPWM = 40;
+    const int minimumTurningPWM = 30;
+    // Max heading correction so it corrects smoothly
+    const int maximumHeadingCorrection = 45;
+
+    // Makes sure travelling distance (maxPWM) is valid
+    maxPWM = abs(maxPWM);
+    if (maxPWM > 255) {
+      maxPWM = 255;
+    } else if (maxPWM < minimumMovingPWM) {
+      maxPWM = minimumMovingPWM;
+    }
+
+    // Makes it wait for 200 ms in deadband to make sure it isn't just passing thru the deadband but
+    // it's actually settled
+    const unsigned long timeBeforeConsideredSettled = 200; 
+
+    resetEnc();
+    mpu.update();
+    float targetHeading = getRot();
+
+    float previousDistanceError = targetDistance - getCurrAvgDist();
+    float intError = 0;
+    float filteredDerivError = 0;
+
+    unsigned long previousLoopTime = millis();
+    unsigned long timeWhenInitiallySettled = 0;
+    unsigned long loopTime = 10; // How long each loop should run in ms (for dt)
+
+    while (true) {
+        unsigned long currentTime = millis();
+        // Ensures dt will be big enough for PID control (not 0s which would mess it up)
+        if (currentTime - previousLoopTime < loopTime) {
+          continue;
+        }
+
+        // dt (time btw loops) for finding velocity. div by 1000 to make it in s from ms
+        float dt = (currentTime - previousLoopTime) / 1000.0f;
+        previousLoopTime = currentTime;
+        mpu.update();
+
+        float currentDistance = getCurrAvgDist();
+        float distanceError = targetDistance - currentDistance;
+        float headingError = normaliseAngle(targetHeading - getRot());
+
+        // Derivative distance controller
+        float derivError = (distanceError - previousDistanceError) / dt;
+        previousDistanceError = distanceError;
+        // Cause encoder might be noisy this tries to filter/smooth the derivative error so it doesn't 
+        // jump massively due to noise (spike would make derivative MASSIVE)
+        filteredDerivError = 0.8 * filteredDerivError + 0.2 * derivError;
+
+        // Integral distance controller, bounds it to the int limit to prevent int windup
+        if (abs(distanceError) > distanceDeadband) {
+            intError = intError + distanceError * dt;
+            if (intError > intLimit) {
+                intError = intLimit;
+            } else if (intError < -intLimit) {
+                intError = -intLimit;
+            }
+        } else {
+            // To prevent int component of PID making it move when in deadband due to windup
+            intError = 0.0f;
+        }
+
+        // Distance controller
+        float pidDistControlPWM = distanceKp * distanceError + distanceKi * intError + distanceKd * filteredDerivError;
+        if (pidDistControlPWM > maxPWM) {
+          pidDistControlPWM = maxPWM;
+        } else if (pidDistControlPWM < -maxPWM) {
+          pidDistControlPWM = -maxPWM;
+        }
+        // If abs(PWM) less than the minimum to move, make it the minimum
+        if (abs(pidDistControlPWM) < minimumMovingPWM) {
+            if (distanceError > 0) {
+                pidDistControlPWM = minimumMovingPWM;
+            } else {
+                pidDistControlPWM = -minimumMovingPWM;
+            }
+        }
+        // Stops moving forward when in the deadband
+        if (abs(distanceError) <= distanceDeadband) {
+            pidDistControlPWM = 0;
+        }
+
+        // Angle heading controller
+        float propAngleControlPWM = headingKp * headingError;
+        if (propAngleControlPWM > maximumHeadingCorrection) {
+          propAngleControlPWM = maximumHeadingCorrection;
+        } else if (propAngleControlPWM < -maximumHeadingCorrection) {
+          propAngleControlPWM = -maximumHeadingCorrection;
+        }
+
+        // In distance deadband but not heading deadband, make sure PWM big enough so it can still correct
+        if (abs(distanceError) <= distanceDeadband && abs(headingError) > headingDeadband && abs(propAngleControlPWM) < minimumTurningPWM) {
+            if (headingError > 0) {
+                propAngleControlPWM = minimumTurningPWM;
+            } else {
+                propAngleControlPWM = -minimumTurningPWM;
+            }
+        }
+
+        // If in heading deaband don't correct heading
+        if (abs(headingError) <= headingDeadband) {
+            propAngleControlPWM = 0;
+        }
+
+        int leftSpeed = pidDistControlPWM - propAngleControlPWM;
+        int rightSpeed = pidDistControlPWM + propAngleControlPWM;
+        setForwardPWMVelocity(leftSpeed, rightSpeed);
+
+        bool inDistDeadband = false;
+        bool inAngleDeadband = false;
+        if (abs(distanceError) <= distanceDeadband) {
+          inDistDeadband = true;
+        }
+        if (abs(headingError) <= headingDeadband) {
+          inAngleDeadband = true;
+        }
+
+        // Sees if all deadband conditions met, if so checks to see if they've been met for 
+        // at least a little bit to make sure no more overshoot. If so it finally exits the function
+        if (inDistDeadband &&
+            inAngleDeadband) {
+            
+            unsigned long currTime = millis();
+            if (timeWhenInitiallySettled == 0) {
+                timeWhenInitiallySettled = currTime;
+            }
+
+            if (currTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                setForwardPWMVelocity(0, 0);
+                return;
+            }
+        } else {
+            timeWhenInitiallySettled = 0;
+        }
+    }
   }
 
   int getLidarDistanceFront() {
