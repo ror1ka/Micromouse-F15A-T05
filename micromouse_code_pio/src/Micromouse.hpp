@@ -28,7 +28,10 @@ VL6180X sensorR;
 #define LIDAR_FRONT A2
 #define LIDAR_LEFT A0
 #define LIDAR_RIGHT A1
-
+const int WallThreshold = 140;
+const int SafeLeft = 45;
+const int SafeRight = 45;
+PIDController wallPID(1.0, 0.0, 0.0);
 #define PI radians(180)
 
 static constexpr uint8_t DEFAULT_ADDRESS = 0x29;
@@ -86,6 +89,18 @@ public:
     setupSensorLidar(0x30, LIDAR_FRONT, sensorF);
     setupSensorLidar(0x31, LIDAR_LEFT, sensorL);
     setupSensorLidar(0x32, LIDAR_RIGHT, sensorR);
+
+    sensorF.setTimeout(1000);
+    sensorL.setTimeout(1000);
+    sensorR.setTimeout(1000);
+
+    sensorF.readRangeSingleMillimeters();
+    sensorL.readRangeSingleMillimeters();
+    sensorR.readRangeSingleMillimeters();
+
+    sensorF.setTimeout(100);
+    sensorL.setTimeout(100);
+    sensorR.setTimeout(100);
 
     Serial.println("All LiDARs initialised");
   }
@@ -320,12 +335,12 @@ public:
   }
 
   float getLeftWheelDist() {
-    float leftDist = -(leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    float leftDist = (leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
     return leftDist;
   }
 
   float getRightWheelDist() {
-    float rightDist = (rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    float rightDist = -(rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
     return rightDist;
   }
 
@@ -593,36 +608,35 @@ public:
     }
   }
 
-  int getLidarDistanceFront() {
-    uint8_t rawDistance = sensorF.readRangeSingleMillimeters();
-
-    // Serial.println(rawDistance);
-
+int getLidarDistanceFront() {
+  uint8_t rawDistance = sensorF.readRangeSingleMillimeters();
+  if (sensorF.timeoutOccurred()) {
+    rawDistance = sensorF.readRangeSingleMillimeters(); // retry once, bus likely just needed a nudge
     if (sensorF.timeoutOccurred()) {
-      Serial.println("Front LiDAR timeout");
+      Serial.println("Front LiDAR timeout (retry also failed)");
       return -1;
     }
+  }
+  return static_cast<int>(rawDistance);
+}
 
-    return static_cast<int>(rawDistance);
+int getLidarDistanceLeft() {
+  uint8_t rawDistance = sensorL.readRangeSingleMillimeters();
+
+  if (sensorL.timeoutOccurred()) {
+    uint8_t status = sensorL.readReg(VL6180X::RESULT__RANGE_STATUS);
+    Serial.print("Left LiDAR timeout, RESULT__RANGE_STATUS = 0x");
+    Serial.println(status, HEX);
+    return -1;
   }
 
-  int getLidarDistanceLeft() {
-    uint8_t rawDistance = sensorL.readRangeSingleMillimeters();
-
-    // Serial.println(rawDistance);
-
-    if (sensorL.timeoutOccurred()) {
-      Serial.println("Left LiDAR timeout");
-      return -1;
-    }
-
-    return static_cast<int>(rawDistance);
-  }
-
+  return static_cast<int>(rawDistance);
+}
+ 
   int getLidarDistanceRight() {
     uint8_t rawDistance = sensorR.readRangeSingleMillimeters();
 
-    Serial.println(rawDistance);
+    //Serial.println(rawDistance);
 
     if (sensorR.timeoutOccurred()) {
       Serial.println("Right LiDAR timeout");
@@ -786,8 +800,17 @@ public:
     float remainingDist = targetDist - distanceTravelled;
 
     while (getCurrAvgDist() < targetDist) {
+    Serial.print("Left: ");
+      Serial.print(getLeftWheelDist());
+
+      Serial.print(" Right: ");
+      Serial.print(getRightWheelDist());
+
+      Serial.print(" Avg: ");
+      Serial.println(getCurrAvgDist());
       // Heading/angle stuff
       mpu.update();
+      
       currentHeading = getRot();
       headingError = targetHeading - currentHeading;
 
@@ -947,7 +970,36 @@ public:
       }
     }
   }
+float getWallCorrection() {
+  float hard = getLidarDistanceFront(); // hardcoding
+  float left = getLidarDistanceLeft();
+  float right = getLidarDistanceRight();
 
+  Serial.print("Left: ");
+  Serial.print(left);
+  Serial.print(" Right: ");
+  Serial.println(right);
+
+  bool leftWall = left < WallThreshold;
+  bool rightWall = right < WallThreshold;
+
+  if (!leftWall && !rightWall)
+    return 0;
+
+  if (leftWall && rightWall)
+  {
+    float error = left - right;
+    return wallPID.compute(error);
+  }
+    else if (leftWall) {
+        float error = SafeLeft - left;
+        return wallPID.compute(error);
+    }
+    else { // right wall only
+        float error = right - SafeRight;
+        return wallPID.compute(error);
+    }
+}
   // Task 3 Chaining
   void chainMovement(char *chain_string) {
     int length = strlen(chain_string);
@@ -975,7 +1027,7 @@ public:
         Modified_Tracking(180, 100);
       }
 
-      delay(200);
+      delay(800);
     }
   }
 
