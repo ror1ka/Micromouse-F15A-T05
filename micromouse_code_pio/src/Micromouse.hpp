@@ -111,6 +111,7 @@ public:
 
   s.init();
   s.configureDefault();
+  s.writeReg(VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME, 0x14);
   s.setTimeout(100);
   s.setAddress(address);
 
@@ -608,43 +609,32 @@ public:
     }
   }
 
-int getLidarDistanceFront() {
-  uint8_t rawDistance = sensorF.readRangeSingleMillimeters();
-  if (sensorF.timeoutOccurred()) {
-    rawDistance = sensorF.readRangeSingleMillimeters(); // retry once, bus likely just needed a nudge
-    if (sensorF.timeoutOccurred()) {
-      Serial.println("Front LiDAR timeout (retry also failed)");
-      return -1;
-    }
-  }
-  return static_cast<int>(rawDistance);
+int readLidar(VL6180X& s, uint8_t addr, uint8_t pin, const char* name) {
+  int d = s.readRangeSingleMillimeters();
+  if (!s.timeoutOccurred()) return d;
+
+  Serial.print(name);
+  Serial.println(" LiDAR lost address, re-initialising");
+
+  digitalWrite(pin, LOW);
+  delay(10);
+  digitalWrite(pin, HIGH);
+  delay(50);
+
+  s.setAddress(DEFAULT_ADDRESS);   // point the object back at 0x29
+  s.init();
+  s.configureDefault();
+  s.writeReg(VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME, 0x14);
+  s.setTimeout(100);
+  s.setAddress(addr);
+
+  d = s.readRangeSingleMillimeters();
+  return s.timeoutOccurred() ? -1 : d;
 }
 
-int getLidarDistanceLeft() {
-  uint8_t rawDistance = sensorL.readRangeSingleMillimeters();
-
-  if (sensorL.timeoutOccurred()) {
-    uint8_t status = sensorL.readReg(VL6180X::RESULT__RANGE_STATUS);
-    Serial.print("Left LiDAR timeout, RESULT__RANGE_STATUS = 0x");
-    Serial.println(status, HEX);
-    return -1;
-  }
-
-  return static_cast<int>(rawDistance);
-}
- 
-  int getLidarDistanceRight() {
-    uint8_t rawDistance = sensorR.readRangeSingleMillimeters();
-
-    //Serial.println(rawDistance);
-
-    if (sensorR.timeoutOccurred()) {
-      Serial.println("Right LiDAR timeout");
-      return -1;
-    }
-
-    return static_cast<int>(rawDistance);
-  }
+int getLidarDistanceFront() { return readLidar(sensorF, 0x30, LIDAR_FRONT, "Front"); }
+int getLidarDistanceLeft()  { return readLidar(sensorL, 0x31, LIDAR_LEFT,  "Left");  }
+int getLidarDistanceRight() { return readLidar(sensorR, 0x32, LIDAR_RIGHT, "Right"); }
 
   int getMedianDistance() {
     const int numSamples = 5;
@@ -971,7 +961,7 @@ int getLidarDistanceLeft() {
     }
   }
 float getWallCorrection() {
-  float hard = getLidarDistanceFront(); // hardcoding
+  float front = getLidarDistanceFront(); // hardcoding
   float left = getLidarDistanceLeft();
   float right = getLidarDistanceRight();
 
@@ -979,6 +969,9 @@ float getWallCorrection() {
   Serial.print(left);
   Serial.print(" Right: ");
   Serial.println(right);
+  Serial.print(" Front: ");
+  Serial.println(front);
+
 
   bool leftWall = left < WallThreshold;
   bool rightWall = right < WallThreshold;
