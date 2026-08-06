@@ -32,6 +32,14 @@ const int WallThreshold = 140;
 const int SafeLeft = 45;
 const int SafeRight = 45;
 PIDController wallPID(1.0, 0.0, 0.0);
+
+const float wallSetpoint  = 45.0f;   // mm sensor-to-wall when centred
+const float sideBias      = 0.0f;    // +ve if left sensor reads long; calibrate
+const float wallTrimKp    = 0.25f;   // mm of lateral offset -> deg of heading trim
+const float maxWallTrim   = 12.0f;   // deg clamp, so it never overrides the IMU
+const unsigned long wallSampleInterval = 60;  // ms between LiDAR samples
+
+
 #define PI radians(180)
 
 static constexpr uint8_t DEFAULT_ADDRESS = 0x29;
@@ -418,6 +426,10 @@ public:
     resetEnc();
     mpu.update();
     float targetHeading = getRot();
+
+    float baseHeading = targetHeading;
+    float wallTrim = 0.0f;
+    unsigned long lastWallSample = 0;
     // // To include the global heading functionality:
     // float targetHeading = targetGlobalHeading;
 
@@ -441,9 +453,24 @@ public:
         previousLoopTime = currentTime;
         mpu.update();
 
+        // Only sample forward moves, and far slower than the 10ms control loop
+        if (targetDistance > 0 && currentTime - lastWallSample >= wallSampleInterval) {
+            lastWallSample = currentTime;
+
+            float offset;
+            if (getWallOffset(offset)) {
+              float trim = wallTrimKp * offset;
+              if (trim >  maxWallTrim) trim =  maxWallTrim;
+              if (trim < -maxWallTrim) trim = -maxWallTrim;
+              wallTrim = 0.7f * wallTrim + 0.3f * trim;   // slew, so wall gain/loss isn't a step
+            } else {
+              wallTrim = 0.7f * wallTrim;                  // decay out when walls disappear
+          }
+        }
+
         float currentDistance = getCurrAvgDist();
         float distanceError = targetDistance - currentDistance;
-        float headingError = normaliseAngle(targetHeading - getRot());
+        float headingError = normaliseAngle(baseHeading + wallTrim - getRot());
 
         // Derivative distance controller
         float derivError = (distanceError - previousDistanceError) / dt;
@@ -960,39 +987,62 @@ int getLidarDistanceRight() { return readLidar(sensorR, 0x32, LIDAR_RIGHT, "Righ
       }
     }
   }
-float getWallCorrection() {
-  float front = getLidarDistanceFront(); // hardcoding
-  float left = getLidarDistanceLeft();
+
+
+// offset in mm: +ve = robot is too far RIGHT, so it should steer left.
+// Returns false when neither side wall is visible.
+bool getWallOffset(float& offset) {
+  float left  = getLidarDistanceLeft();
   float right = getLidarDistanceRight();
 
-  Serial.print("Left: ");
-  Serial.print(left);
-  Serial.print(" Right: ");
-  Serial.println(right);
-  Serial.print(" Front: ");
-  Serial.println(front);
+  bool leftWall  = (left  > 0 && left  < WallThreshold);
+  bool rightWall = (right > 0 && right < WallThreshold);
 
-
-  bool leftWall = left < WallThreshold;
-  bool rightWall = right < WallThreshold;
-
-  if (!leftWall && !rightWall)
-    return 0;
-
-  if (leftWall && rightWall)
-  {
-    float error = left - right;
-    return wallPID.compute(error);
+  if (leftWall && rightWall) {
+    // /2 because moving 5mm right grows left by 5 AND shrinks right by 5
+    offset = ((left - sideBias) - right) / 2.0f;
+    return true;
   }
-    else if (leftWall) {
-        float error = SafeLeft - left;
-        return wallPID.compute(error);
-    }
-    else { // right wall only
-        float error = right - SafeRight;
-        return wallPID.compute(error);
-    }
+  if (leftWall)  { offset = (left - sideBias) - wallSetpoint; return true; }
+  if (rightWall) { offset = wallSetpoint - right;             return true; }
+
+  offset = 0.0f;
+  return false;
 }
+
+// float getWallCorrection() {
+//   float front = getLidarDistanceFront(); // hardcoding
+//   float left = getLidarDistanceLeft();
+//   float right = getLidarDistanceRight();
+
+//   Serial.print("Left: ");
+//   Serial.print(left);
+//   Serial.print(" Right: ");
+//   Serial.println(right);
+//   Serial.print(" Front: ");
+//   Serial.println(front);
+
+
+//   bool leftWall = left < WallThreshold;
+//   bool rightWall = right < WallThreshold;
+
+//   if (!leftWall && !rightWall)
+//     return 0;
+
+//   if (leftWall && rightWall)
+//   {
+//     float error = left - right;
+//     return wallPID.compute(error);
+//   }
+//     else if (leftWall) {
+//         float error = SafeLeft - left;
+//         return wallPID.compute(error);
+//     }
+//     else { // right wall only
+//         float error = right - SafeRight;
+//         return wallPID.compute(error);
+//     }
+// }
   // Task 3 Chaining
   void chainMovement(char *chain_string) {
     int length = strlen(chain_string);
@@ -1017,7 +1067,7 @@ float getWallCorrection() {
       }
 
       if (chain_string[i] == 'f') {
-        Modified_Tracking(180, 100);
+        driveDistanceStraight(180, 100);
       }
 
       delay(800);

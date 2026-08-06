@@ -47,8 +47,9 @@ void loop() {
 
   // mouse.printLidar();
   // delay(500);
-  mouse.getWallCorrection();
+  // mouse.getWallCorrection();
   //mouse.printLidar();
+  mouse.driveDistanceStraight(360, 100);   // 2 cells
   delay(100);
 
   // while (true)
