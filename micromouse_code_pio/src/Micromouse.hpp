@@ -33,10 +33,10 @@ const int SafeLeft = 45;
 const int SafeRight = 45;
 PIDController wallPID(1.0, 0.0, 0.0);
 
-const float wallSetpoint  = 45.0f;   // mm sensor-to-wall when centred
-const float sideBias      = 0.0f;    // +ve if left sensor reads long; calibrate
-const float wallTrimKp    = 0.25f;   // mm of lateral offset -> deg of heading trim
-const float maxWallTrim   = 12.0f;   // deg clamp, so it never overrides the IMU
+const float wallSetpoint  = 48.0f;   // measured: (54+42)/2
+const float sideBias      = 0.0f;    // measured left-right = 12mm, but ONLY valid if dead-centre — verify
+const float wallTrimKp    = 0.6f;    // was 0.25 — 10mm error now gives ~12 PWM split, not 5
+const float maxWallTrim   = 20.0f;   // was 12
 const unsigned long wallSampleInterval = 60;  // ms between LiDAR samples
 
 
