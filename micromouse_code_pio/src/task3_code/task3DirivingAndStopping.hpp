@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "Micromouse.hpp"
-#include "task3_code/task3Tracking.cpp"
+#include "task3_code/task3Tracking.hpp"
 
 void drivingAndStopping(Micromouse mouse)
 {

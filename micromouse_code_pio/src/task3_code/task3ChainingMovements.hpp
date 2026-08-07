@@ -1,10 +1,11 @@
 #include <Arduino.h>
 #include "Micromouse.hpp"
-#include "task3_code/task3Tracking.cpp"
+#include "task3_code/task3Tracking.hpp"
+#include <string.h>
 
-void chainMovement(Micromouse mouse, char *chain_string)
+void chainMovement(Micromouse mouse, String chain_string)
 {
-    int length = strlen(chain_string);
+    int length = chain_string.length();
     for (int i = 0; i <= length; i++)
     {
         // if (i == 3 && chain_string[i] == 'f') {
@@ -30,7 +31,7 @@ void chainMovement(Micromouse mouse, char *chain_string)
 
         if (chain_string[i] == 'f')
         {
-            Modified_Tracking(mouse, 180, 100);
+            Modified_Tracking(mouse, 180, 165);
         }
 
         delay(200);

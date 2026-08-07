@@ -1,6 +1,7 @@
 // MTRN3100 Micromouse Code PlatformIO
 #include <Arduino.h>
 #include <devices/Devices.hpp>
+#include <task3_code/task3ChainingMovements.hpp>
 #include "Micromouse.hpp"
 #include "Wire.h"
 #include <VL6180X.h>
@@ -36,16 +37,16 @@ void loop() {
   // mouse.Task3_Turning();
 
   // Task 3 Chain Motion
-  //mouse.chainMovement("flflfrfrfrf");
+  chainMovement(mouse, "ffffrflfrfrflflfrfflfrfrflfrflfrffffrflfrffffflflffff");
    //mouse.turnAngle(70, -90);
 
   // mouse.printLidar();
   // delay(500);
   // mouse.getWallCorrection();
   // mouse.printLidar();
-  mouse.driveDistanceStraight(360, 100);   // 2 cells
-  mouse.printLidar();
-  delay(200);
+  // mouse.driveDistanceStraight(360, 100);   // 2 cells
+  // mouse.printLidar();
+  // delay(200);
 
   // while (true)
   // {}
