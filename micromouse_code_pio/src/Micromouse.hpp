@@ -1,10 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include "Motor.hpp"
-#include "PIDController.hpp"
-#include "Encoder.hpp"
-#include "BangBangController.hpp"
+#include <devices/Devices.hpp>
 #include "MicromouseData.hpp"
 #include "Wire.h"
 #include <MPU6050_light.h>
@@ -61,9 +58,9 @@ public:
     rightMotor.setPWM(-speed);
   }
 
-  void move(int16_t speed) {
-    leftMotor.setPWM(-speed);
-    rightMotor.setPWM(speed);
+  void move(int16_t Lspeed, int16_t Rspeed) {
+    leftMotor.setPWM(-Lspeed);
+    rightMotor.setPWM(Rspeed);
   }
 
   void setupIMU() {
@@ -127,8 +124,46 @@ public:
   Serial.print(enablePin);
   Serial.print(" assigned address 0x");
   Serial.println(address, HEX);
-}
+  }
 
+  // Gonna need to be put in the initialisation code to initialise the global heading variable
+  void initialiseGlobalHeading() {
+    mpu.update();
+    targetGlobalHeading = getRot();
+  }
+
+
+  float normaliseAngle(float angle) {
+    while (angle > 180) {
+      angle = angle - 360;
+    }
+
+    while (angle < -180) {
+      angle = angle + 360;
+    }
+
+    return angle;
+  }
+
+    // Makes micromouse go forward when taking in 2 positive PWMs (corrects the fact that both
+  // wheels are in opposite directions). PWMs +ve = forward, PWMs -ve = backward. Also bounds
+  // PWM so doesn't go above or below safe range
+  void setForwardPWMVelocity(int leftPWM, int rightPWM) {
+    if (leftPWM < -255) {
+      leftPWM = -255;
+    } else if (leftPWM > 255) {
+      leftPWM = 255;
+    }
+
+    if (rightPWM < -255) {
+      rightPWM = -255;
+    } else if (rightPWM > 255) {
+      rightPWM = 255;
+    }
+
+    leftMotor.setPWM(-leftPWM);
+    rightMotor.setPWM(rightPWM);
+  }
 
   //////// Main Functions ////////
   void turnLeft(int16_t speed, float target, float err) {
@@ -215,7 +250,7 @@ public:
       Serial.println(String("Dist: ") + getCurrAvgDist());
       Serial.println(String("Err: ") + pid.getError());
       // if (abs(pid.getError()) > DIST_ERR) {
-        move(speed);
+        move(speed, speed);
       // } else {
       //   move((speed * abs(pid.getError())/DIST_ERR) + 5);
       // }
@@ -223,7 +258,7 @@ public:
       pid.compute(getCurrAvgDist());
     }
 
-    move(0);
+    move(0, 0);
   }
 
   // Attempt to combine Task3_Tracking and PIDController.hpp
@@ -294,103 +329,6 @@ public:
   //   move(0);
   // }
 
-
-  void printLidar() {
-    int frontDistance = getLidarDistanceFront();
-    int leftDistance = getLidarDistanceLeft();
-    int rightDistance = getLidarDistanceRight();
-
-    Serial.print("Left: ");
-    Serial.print(leftDistance);
-
-    Serial.print(" mm\tFront: ");
-    Serial.print(frontDistance);
-
-    Serial.print(" mm\tRight: ");
-    Serial.print(rightDistance);
-
-    Serial.println(" mm");
-  }
-
-
-  // Get Func for debugging purposes
-  Encoder getEncoder(int num) {
-    if (num == LEFT) {
-      return leftEncoder;
-    } else {
-      return rightEncoder;
-    }
-  }
-
-  Motor getLeftMotor() {
-    return leftMotor;
-  }
-
-  Motor getRightMotor() {
-    return rightMotor;
-  }
-
-  void printIMU() {
-    Serial.print("\tZ : ");
-    Serial.println(mpu.getAngleZ());
-  }
-
-  float getRot() {
-    return mpu.getAngleZ();
-  }
-
-  float getPrevRot() {
-    return prevRot;
-  }
-
-  float getLeftWheelDist() {
-    float leftDist = (leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
-    return leftDist;
-  }
-
-  float getRightWheelDist() {
-    float rightDist = -(rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
-    return rightDist;
-  }
-
-  // Returns average distance based on left and right wheel encoder rotation info. 
-  // -ve = backward. +ve = forward
-  float getCurrAvgDist() {
-    return (getLeftWheelDist() + getRightWheelDist())/2;
-  }
-
-  float normaliseAngle(float angle) {
-    while (angle > 180) {
-      angle = angle - 360;
-    }
-
-    while (angle < -180) {
-      angle = angle + 360;
-    }
-
-    return angle;
-  }
-
-  // Makes micromouse go forward when taking in 2 positive PWMs (corrects the fact that both
-  // wheels are in opposite directions). PWMs +ve = forward, PWMs -ve = backward. Also bounds
-  // PWM so doesn't go above or below safe range
-  void setForwardPWMVelocity(int leftPWM, int rightPWM) {
-    if (leftPWM < -255) {
-      leftPWM = -255;
-    } else if (leftPWM > 255) {
-      leftPWM = 255;
-    }
-
-    if (rightPWM < -255) {
-      rightPWM = -255;
-    } else if (rightPWM > 255) {
-      rightPWM = 255;
-    }
-
-    leftMotor.setPWM(-leftPWM);
-    rightMotor.setPWM(rightPWM);
-  }
-
   // Attempt at a PID controller for distance movement and P controller for heading correction
   // ONLY USE POSITIVE MAXPWM. Want to go backward: make targetDistance -ve. +ve targetDistance = forward
   void driveDistanceStraight(float targetDistance, int maxPWM) {
@@ -400,8 +338,8 @@ public:
     const float headingKp = 2.0f;
 
     // Deadbands (mm & degrees respectively)
-    const float distanceDeadband = 3.0f;   
-    const float headingDeadband = 0.6f;    
+    const float distanceDeadband = 3.0f;
+    const float headingDeadband = 0.6f;
 
     float intLimit = 100.0f; // to get rid of integral windup which Will talked abt in lectures
 
@@ -551,7 +489,7 @@ public:
         // at least a little bit to make sure no more overshoot. If so it finally exits the function
         if (inDistDeadband &&
             inAngleDeadband) {
-            
+
             unsigned long currTime = millis();
             if (timeWhenInitiallySettled == 0) {
                 timeWhenInitiallySettled = currTime;
@@ -565,12 +503,6 @@ public:
             timeWhenInitiallySettled = 0;
         }
     }
-  }
-
-  // Gonna need to be put in the initialisation code to initialise the global heading variable
-  void initialiseGlobalHeading() {
-    mpu.update();
-    targetGlobalHeading = getRot();
   }
 
   // Turns the micromouse by "angleToTurn" using a P controller and updates global heading variable
@@ -659,6 +591,8 @@ int readLidar(VL6180X& s, uint8_t addr, uint8_t pin, const char* name) {
   return s.timeoutOccurred() ? -1 : d;
 }
 
+////////// GET FUNCTIONS //////////////
+
 int getLidarDistanceFront() { return readLidar(sensorF, 0x30, LIDAR_FRONT, "Front"); }
 int getLidarDistanceLeft()  { return readLidar(sensorL, 0x31, LIDAR_LEFT,  "Left");  }
 int getLidarDistanceRight() { return readLidar(sensorR, 0x32, LIDAR_RIGHT, "Right"); }
@@ -699,295 +633,6 @@ int getLidarDistanceRight() { return readLidar(sensorR, 0x32, LIDAR_RIGHT, "Righ
     // returns median reading in the sorted array
     return lidarReadings[validReadings/2];
   }
-
-  //////// Task 3 Functions ////////
-
-  // Task 3 Tracking
-  void task3_Tracking(float desiredDist, int16_t speed) {
-    // Target distance in mm
-    float targetDist {desiredDist};
-    float angleDeadband {0.3f};
-    // Proportional constant for angle error correction controller
-    float Kp {2.0f};
-
-    float errorCorrection {0.0f};
-    float maxCorrection {45.0f};
-
-    // PWM speed constants
-    int normalSpeed {speed};
-    // int slowSpeed {60};
-    int baselinePWM {0};
-
-    int leftSpeed {0};
-    int rightSpeed {0};
-
-    resetEnc();
-    mpu.update();
-    float targetHeading {getRot()};
-    float currentHeading = getRot();
-    float headingError = targetHeading - currentHeading;
-
-    float distanceTravelled = getCurrAvgDist();
-    float remainingDist = targetDist - distanceTravelled;
-
-    while (getCurrAvgDist() < targetDist) {
-      // Heading/angle stuff
-      mpu.update();
-      currentHeading = getRot();
-      headingError = targetHeading - currentHeading;
-
-      // Make heading error within -180 and +180
-      while (headingError < -180) {
-        headingError = headingError + 360;
-      }
-      while (headingError > 180) {
-        headingError = headingError - 360;
-      }
-
-      if (headingError < -angleDeadband || headingError > angleDeadband) {
-        errorCorrection = Kp * headingError;
-      } else {
-        errorCorrection = 0;
-      }
-
-      // Prevent error correction from being too high
-      if (errorCorrection > maxCorrection) {
-        errorCorrection = maxCorrection;
-      } else if (errorCorrection < -maxCorrection) {
-        errorCorrection = -maxCorrection;
-      }
-
-      // Moving forward stuff
-      distanceTravelled = getCurrAvgDist();
-      remainingDist = targetDist - distanceTravelled;
-
-      // Slow down in last 10 cm to prevent overshoot
-      // if (remainingDist < 100) {
-      //   baselinePWM = slowSpeed;
-      // } else {
-      //   baselinePWM = normalSpeed;
-      // }
-      baselinePWM = normalSpeed;
-
-      // Ensures PWM within -255 and 255
-      leftSpeed = baselinePWM - errorCorrection;
-      if (leftSpeed < -255) {
-        leftSpeed = -255;
-      } else if (leftSpeed > 255) {
-        leftSpeed = 255;
-      }
-
-      rightSpeed = baselinePWM + errorCorrection;
-      if (rightSpeed < -255) {
-        rightSpeed = -255;
-      } else if (rightSpeed > 255) {
-        rightSpeed = 255;
-      }
-      leftMotor.setPWM(-leftSpeed);
-      rightMotor.setPWM(rightSpeed);
-    }
-    move(0);
-  }
-
-    void Modified_Tracking(float desiredDist, int16_t speed) {
-    // Target distance in mm
-    float targetDist {desiredDist};
-    float angleDeadband {0.3f};
-    // Proportional constant for angle error correction controller
-    float Kp {2.0f};
-
-    float errorCorrection {0.0f};
-    float maxCorrection {45.0f};
-
-    // PWM speed constants
-    int normalSpeed {speed};
-    // int slowSpeed {60};
-    int baselinePWM {0};
-
-    int leftSpeed {0};
-    int rightSpeed {0};
-
-    resetEnc();
-    mpu.update();
-    float targetHeading {getRot()};
-    float currentHeading = getRot();
-    float headingError = targetHeading - currentHeading;
-
-    float distanceTravelled = getCurrAvgDist();
-    float remainingDist = targetDist - distanceTravelled;
-
-    while (getCurrAvgDist() < targetDist) {
-    Serial.print("Left: ");
-      Serial.print(getLeftWheelDist());
-
-      Serial.print(" Right: ");
-      Serial.print(getRightWheelDist());
-
-      Serial.print(" Avg: ");
-      Serial.println(getCurrAvgDist());
-      // Heading/angle stuff
-      mpu.update();
-      
-      currentHeading = getRot();
-      headingError = targetHeading - currentHeading;
-
-      // Make heading error within -180 and +180
-      while (headingError < -180) {
-        headingError = headingError + 360;
-      }
-      while (headingError > 180) {
-        headingError = headingError - 360;
-      }
-
-      if (headingError < -angleDeadband || headingError > angleDeadband) {
-        errorCorrection = Kp * headingError;
-      } else {
-        errorCorrection = 0;
-      }
-
-      // Prevent error correction from being too high
-      if (errorCorrection > maxCorrection) {
-        errorCorrection = maxCorrection;
-      } else if (errorCorrection < -maxCorrection) {
-        errorCorrection = -maxCorrection;
-      }
-
-      // Moving forward stuff
-      distanceTravelled = getCurrAvgDist();
-      remainingDist = targetDist - distanceTravelled;
-
-      // Slow down in last 10 cm to prevent overshoot
-      // if (remainingDist < 100) {
-      //   baselinePWM = slowSpeed;
-      // } else {
-      //   baselinePWM = normalSpeed;
-      // }
-      // baselinePWM = normalSpeed;
-
-      baselinePWM = adjustSpeed(normalSpeed, targetDist);
-
-      // Ensures PWM within -255 and 255
-      leftSpeed = baselinePWM - errorCorrection;
-      // if (leftSpeed < -255) {
-      //   leftSpeed = -255;
-      // } else if (leftSpeed > 255) {
-      //   leftSpeed = 255;
-      // }
-
-      rightSpeed = baselinePWM + errorCorrection;
-      // if (rightSpeed < -255) {
-      //   rightSpeed = -255;
-      // } else if (rightSpeed > 255) {
-      //   rightSpeed = 255;
-      // }
-
-      if (normalSpeed > 0) {
-        if (leftSpeed < 30) leftSpeed = 30;
-        if (rightSpeed < 30) rightSpeed = 30;
-        if (leftSpeed > 255) leftSpeed = 255;
-        if (rightSpeed > 255) rightSpeed = 255;
-      } else {
-        if (leftSpeed > -30) leftSpeed = -30;
-        if (rightSpeed > -30) rightSpeed = -30;
-        if (leftSpeed < -255) leftSpeed = -255;
-        if (rightSpeed < -255) rightSpeed = -255;
-      }
-
-      leftMotor.setPWM(-leftSpeed);
-      rightMotor.setPWM(rightSpeed);
-    }
-    move(0);
-  }
-
-  void drivingAndStopping() {
-    int currDist = getMedianDistance();
-    // int currDist = getLidarDistanceFront();
-
-    Serial.print("\tLidar Front: ");
-    Serial.println(currDist);
-
-    if (currDist == -1) {
-        return;
-    }
-
-    int error = currDist - 100;
-    if (abs(error) <= 7.5) {
-        move(0);
-        return;
-    }
-
-    if (error > 0) {
-        // travelDistance(error, 75);
-        // travelDistanceModified(error, 75);
-        Modified_Tracking(error, 75);
-    } else {
-        // travelDistance(-error, -75);
-        // travelDistanceModified(-error, -75);
-        Modified_Tracking(abs(error), -75);
-    }
-
-    // if (error > 0) {
-    //   if (error > 20) {
-    //     task3_Tracking(20, 75);
-    //   } else {
-    //     task3_Tracking(error, 30);
-    //   }
-    // } else {
-    //   if (abs(error) > 20) {
-    //     task3_Tracking(20, -75);
-    //   } else {
-    //     task3_Tracking(abs(error), -30);
-    //   }
-    // }
-  }
-
-  int adjustSpeed(int speed, float dist) {
-    int currDist = getCurrAvgDist();
-    int leftover = dist - getCurrAvgDist();
-
-    if (leftover > 40.0f) {
-      return speed;
-    } else {
-      int min = 30;
-      int scale = (speed * leftover) / 40.0f;
-
-      if (speed > 0 && scale < min) {
-        return min;
-      } else if (speed < 0 && speed > -min) {
-        return -min;
-      }
-
-      return scale;
-    }
-  }
-
-    // Task 3 Turning
-  void Task3_Turning() {
-    // Turn clockwise
-    turnAngle(100, TURN_RIGHT);
-
-    // Return to original angle
-    while (true) {
-      mpu.update();
-
-      // Debugging
-      // Serial.print("\tCurrRot : ");
-      // Serial.println(getRot());
-      // Serial.print("\tPrevRot : ");
-      // Serial.println(getPrevRot());
-
-      // Check if passed boundary
-      if (getPrevRot() > getRot() + ANGLE_BOUND || getPrevRot() < getRot() - ANGLE_BOUND) {
-        Serial.println("TRIGGERED");
-        if (getPrevRot() < getRot()) {
-          turnRight(100, getPrevRot(), getPrevRot() + ROT_ERR);
-        } else if (getPrevRot() > getRot()) {
-          turnLeft(100, getPrevRot(), getPrevRot() - ROT_ERR);
-        }
-      }
-    }
-  }
-
 
 // offset in mm: +ve = robot is too far RIGHT, so it should steer left.
 // Returns false when neither side wall is visible.
@@ -1043,37 +688,73 @@ bool getWallOffset(float& offset) {
 //         return wallPID.compute(error);
 //     }
 // }
-  // Task 3 Chaining
-  void chainMovement(char *chain_string) {
-    int length = strlen(chain_string);
-    for (int i = 0; i <= length; i++) {
-      // if (i == 3 && chain_string[i] == 'f') {
-      //   // while (getLidarDistanceFront() > 80 ) {
-      //   //   printLidar();
-      //   //   move(100);
-      //   // }
-      //   // delay(500);
-      //   Modified_Tracking(320, 100);
-      //   delay(500);
-      //   continue;
-      // }
 
-      if (chain_string[i] == 'l') {
-        turnAngle(70, TURN_LEFT);
-      }
-
-      if (chain_string[i] == 'r') {
-        turnAngle(70, TURN_RIGHT);
-      }
-
-      if (chain_string[i] == 'f') {
-        driveDistanceStraight(180, 100);
-      }
-
-      delay(800);
+  Encoder getEncoder(int num) {
+    if (num == LEFT) {
+      return leftEncoder;
+    } else {
+      return rightEncoder;
     }
   }
 
+  Motor getLeftMotor() {
+    return leftMotor;
+  }
+
+  Motor getRightMotor() {
+    return rightMotor;
+  }
+
+  void printIMU() {
+    Serial.print("\tZ : ");
+    Serial.println(mpu.getAngleZ());
+  }
+
+  float getRot() {
+    return mpu.getAngleZ();
+  }
+
+  float getPrevRot() {
+    return prevRot;
+  }
+
+  float getLeftWheelDist() {
+    float leftDist = (leftEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    return leftDist;
+  }
+
+  float getRightWheelDist() {
+    float rightDist = -(rightEncoder.getRotation() / (2 * PI)) * getWheelCir();
+    return rightDist;
+  }
+
+  // Returns average distance based on left and right wheel encoder rotation info. 
+  // -ve = backward. +ve = forward
+  float getCurrAvgDist() {
+    return (getLeftWheelDist() + getRightWheelDist())/2;
+  }
+
+  void printLidar() {
+    int frontDistance = getLidarDistanceFront();
+    int leftDistance = getLidarDistanceLeft();
+    int rightDistance = getLidarDistanceRight();
+
+    Serial.print("Left: ");
+    Serial.print(leftDistance);
+
+    Serial.print(" mm\tFront: ");
+    Serial.print(frontDistance);
+
+    Serial.print(" mm\tRight: ");
+    Serial.print(rightDistance);
+
+    Serial.println(" mm");
+  }
+
+  void resetEnc() {
+    leftEncoder.resetCount();
+    rightEncoder.resetCount();
+  }
 
 private:
   Motor leftMotor = Motor(MOT1PWM, MOT1DIR);
@@ -1082,11 +763,6 @@ private:
   Encoder rightEncoder = Encoder(EN2_A, EN2_B, RIGHT);
   PIDController pid;
   // MPU6050 mpu(Wire);
-
-  void resetEnc() {
-    leftEncoder.resetCount();
-    rightEncoder.resetCount();
-  }
 
   float getWheelCir() {
     return wheelDiameter * PI;

@@ -1,9 +1,6 @@
 // MTRN3100 Micromouse Code PlatformIO
 #include <Arduino.h>
-#include "Motor.hpp"
-#include "PIDController.hpp"
-#include "Encoder.hpp"
-#include "BangBangController.hpp"
+#include <devices/Devices.hpp>
 #include "Micromouse.hpp"
 #include "Wire.h"
 #include <VL6180X.h>
@@ -18,15 +15,12 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUD);
   Wire.begin();
- 
+
   mouse.setupIMU();
   mouse.setupLidar();
 
-
   mouse.initialiseGlobalHeading();
-  mouse.getLidarDistanceLeft();
-
-
+  // mouse.getLidarDistanceLeft();
 
   delay(1000);
 }
