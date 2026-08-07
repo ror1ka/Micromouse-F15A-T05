@@ -40,8 +40,8 @@ static constexpr uint8_t NO_XSHUT_PIN = 255;
 
 class Micromouse {
 public:
-  Micromouse(PIDController pid)
-    : pid(pid), mpu(Wire) {
+  Micromouse(PIDController pid, Oled oled)
+    : pid(pid), mpu(Wire), oled(oled) {
     }
 
   //////// Helper Functions ////////
@@ -769,6 +769,7 @@ private:
   Encoder rightEncoder = Encoder(EN2_A, EN2_B, RIGHT);
   PIDController pid;
   MPU6050 mpu;
+  Oled oled;
 
   float getWheelCir() {
     return wheelDiameter * PI;
