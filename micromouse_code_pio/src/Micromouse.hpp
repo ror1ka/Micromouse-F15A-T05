@@ -7,7 +7,6 @@
 #include <MPU6050_light.h>
 #include <VL6180X.h>
 
-MPU6050 mpu(Wire);
 VL6180X sensor;
 
 VL6180X sensorF;
@@ -36,16 +35,14 @@ const float wallTrimKp    = 0.6f;    // was 0.25 — 10mm error now gives ~12 PW
 const float maxWallTrim   = 20.0f;   // was 12
 const unsigned long wallSampleInterval = 60;  // ms between LiDAR samples
 
-
-#define PI radians(180)
-
 static constexpr uint8_t DEFAULT_ADDRESS = 0x29;
 static constexpr uint8_t NO_XSHUT_PIN = 255;
 
 class Micromouse {
 public:
   Micromouse(PIDController pid)
-    : pid(pid) {}
+    : pid(pid), mpu(Wire) {
+    }
 
   //////// Helper Functions ////////
   void turnMotorLeft(int16_t speed) {
@@ -68,6 +65,11 @@ public:
     Serial.print(F("MPU6050 status: "));
     Serial.println(status);
     while (status != 0) {}  // stop everything if could not connect to MPU6050
+
+    Wire.beginTransmission(0x68);
+    Wire.write(0x1B); // gyro config register
+    Wire.write(0x08); // Sets to range 1 (±500 deg/s)
+    Wire.endTransmission();
 
     Serial.println(F("Calculating offsets, do not move MPU6050"));
     delay(1000);
@@ -728,6 +730,10 @@ bool getWallOffset(float& offset) {
     return rightDist;
   }
 
+  void updateMpu() {
+    mpu.update();
+  }
+
   // Returns average distance based on left and right wheel encoder rotation info. 
   // -ve = backward. +ve = forward
   float getCurrAvgDist() {
@@ -762,7 +768,7 @@ private:
   Encoder leftEncoder = Encoder(EN1_A, EN1_B, LEFT);
   Encoder rightEncoder = Encoder(EN2_A, EN2_B, RIGHT);
   PIDController pid;
-  // MPU6050 mpu(Wire);
+  MPU6050 mpu;
 
   float getWheelCir() {
     return wheelDiameter * PI;
