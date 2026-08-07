@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Arduino.h>
-#define PI radians(180)
 
 // The encoder class is a simple interface which counts and stores an encoders count.
 // Encoder pin 1 is attached to the interupt on the arduino and used to trigger the count.
