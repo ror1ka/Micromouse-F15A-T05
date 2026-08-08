@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "Micromouse.hpp"
 
-void Task3_Turning(Micromouse mouse)
+void Task3_Turning(Micromouse& mouse)
 {
     // Turn clockwise
     mouse.turnAngle(100, TURN_RIGHT);

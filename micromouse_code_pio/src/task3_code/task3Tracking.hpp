@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include "Micromouse.hpp"
 
-int adjustSpeed(Micromouse mouse, int speed, float dist);
+int adjustSpeed(Micromouse& mouse, int speed, float dist);
 
-void task3_Tracking(Micromouse mouse, float desiredDist, int16_t speed)
+void task3_Tracking(Micromouse& mouse, float desiredDist, int16_t speed)
 {
   // Target distance in mm
   float targetDist{desiredDist};
@@ -104,7 +104,7 @@ void task3_Tracking(Micromouse mouse, float desiredDist, int16_t speed)
   mouse.move(0, 0);
 }
 
-void Modified_Tracking(Micromouse mouse, float desiredDist, int16_t speed)
+void Modified_Tracking(Micromouse& mouse, float desiredDist, int16_t speed)
 {
   // Target distance in mm
   float targetDist{desiredDist};
@@ -225,7 +225,7 @@ void Modified_Tracking(Micromouse mouse, float desiredDist, int16_t speed)
   mouse.move(0, 0);
 }
 
-int adjustSpeed(Micromouse mouse, int speed, float dist)
+int adjustSpeed(Micromouse& mouse, int speed, float dist)
 {
   int currDist = mouse.getCurrAvgDist();
   int leftover = dist - currDist;

@@ -394,19 +394,19 @@ public:
         mpu.update();
 
         // Only sample forward moves, and far slower than the 10ms control loop
-        if (targetDistance > 0 && currentTime - lastWallSample >= wallSampleInterval) {
-            lastWallSample = currentTime;
+        // if (targetDistance > 0 && currentTime - lastWallSample >= wallSampleInterval) {
+        //     lastWallSample = currentTime;
 
-            float offset;
-            if (getWallOffset(offset)) {
-              float trim = wallTrimKp * offset;
-              if (trim >  maxWallTrim) trim =  maxWallTrim;
-              if (trim < -maxWallTrim) trim = -maxWallTrim;
-              wallTrim = 0.7f * wallTrim + 0.3f * trim;   // slew, so wall gain/loss isn't a step
-            } else {
-              wallTrim = 0.7f * wallTrim;                  // decay out when walls disappear
-          }
-        }
+        //     float offset;
+        //     if (getWallOffset(offset)) {
+        //       float trim = wallTrimKp * offset;
+        //       if (trim >  maxWallTrim) trim =  maxWallTrim;
+        //       if (trim < -maxWallTrim) trim = -maxWallTrim;
+        //       wallTrim = 0.7f * wallTrim + 0.3f * trim;   // slew, so wall gain/loss isn't a step
+        //     } else {
+        //       wallTrim = 0.7f * wallTrim;                  // decay out when walls disappear
+        //   }
+        // }
 
         float currentDistance = getCurrAvgDist();
         float distanceError = targetDistance - currentDistance;
@@ -440,13 +440,15 @@ public:
           pidDistControlPWM = -maxPWM;
         }
         // If abs(PWM) less than the minimum to move, make it the minimum
-        if (abs(pidDistControlPWM) < minimumMovingPWM) {
-            if (distanceError > 0) {
-                pidDistControlPWM = minimumMovingPWM;
-            } else {
-                pidDistControlPWM = -minimumMovingPWM;
-            }
-        }
+        if (abs(distanceError) > distanceDeadband &&
+              abs(pidDistControlPWM) < minimumMovingPWM) {
+
+                if (distanceError > 0) {
+                    pidDistControlPWM = minimumMovingPWM;
+                } else {
+                    pidDistControlPWM = -minimumMovingPWM;
+                }
+          }
         // Stops moving forward when in the deadband
         if (abs(distanceError) <= distanceDeadband) {
             pidDistControlPWM = 0;

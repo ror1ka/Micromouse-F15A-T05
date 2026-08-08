@@ -2,7 +2,7 @@
 #include "Micromouse.hpp"
 #include "task3_code/task3Tracking.hpp"
 
-void drivingAndStopping(Micromouse mouse)
+void drivingAndStopping(Micromouse& mouse)
 {
     int currDist = mouse.getMedianDistance();
     // int currDist = getLidarDistanceFront();

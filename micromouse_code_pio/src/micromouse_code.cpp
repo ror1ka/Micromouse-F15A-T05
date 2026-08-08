@@ -37,17 +37,19 @@ void loop() {
   // mouse.Task3_Turning();
 
   // Task 3 Chain Motion
-  chainMovement(mouse, "ffffrflfrfrflflfrfflfrfrflfrflfrffffrflfrffffflflffff");
-   //mouse.turnAngle(70, -90);
-
+  //chainMovement(mouse, "ffrfl");
+  //chainMovement(mouse, "ffffrflfrfrflflfrfflfrfrflfrflfrffffrflfrffffflflffff");
+  //  mouse.driveDistanceStraight(360, 100);
+  //   mouse.turnAngle(70, -90);
+  chainMovement(mouse, "ffrfrflflflflfflff");
   // mouse.printLidar();
   // delay(500);
   // mouse.getWallCorrection();
-  // mouse.printLidar();
-  // mouse.driveDistanceStraight(360, 100);   // 2 cells
+  mouse.printLidar();
+   // 2 cells
   // mouse.printLidar();
   // delay(200);
 
-  // while (true)
-  // {}
+  while (true)
+  {}
 }
