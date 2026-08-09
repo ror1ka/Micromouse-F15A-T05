@@ -1,6 +1,10 @@
+#pragma once
+
 #include <Arduino.h>
 #include "Micromouse.hpp"
 
+// Turn a quarter turn right, then hold that heading indefinitely, correcting
+// whenever the robot drifts more than ANGLE_BOUND degrees off it.
 void Task3_Turning(Micromouse& mouse)
 {
     // Turn clockwise
@@ -9,7 +13,7 @@ void Task3_Turning(Micromouse& mouse)
     // Return to original angle
     while (true)
     {
-        mpu.update();
+        mouse.updateMpu();
 
         // Debugging
         // Serial.print("\tCurrRot : ");

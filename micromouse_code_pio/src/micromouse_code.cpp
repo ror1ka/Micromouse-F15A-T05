@@ -1,55 +1,43 @@
 // MTRN3100 Micromouse Code PlatformIO
 #include <Arduino.h>
-#include <devices/Devices.hpp>
-#include <task3_code/task3ChainingMovements.hpp>
+#include <Wire.h>
+
 #include "Micromouse.hpp"
-#include "Wire.h"
-#include <VL6180X.h>
+#include "task3_code/task3ChainingMovements.hpp"
+#include "task3_code/task3DirivingAndStopping.hpp"
+#include "task3_code/task3Turning.hpp"
 
-#define BAUD 115200
+constexpr unsigned long BAUD = 115200;
 
+// Used by travelDistance only; the PID routines carry their own gains.
 PIDController posPID(2.0, 1.0, 2.0);
 Micromouse mouse(posPID);
-unsigned long timer = 0;
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(BAUD);
   Wire.begin();
 
+  // setupIMU blocks until the MPU6050 answers, and spends a second calibrating
+  // its offsets - the robot must be still and level for that.
   mouse.setupIMU();
   mouse.setupLidar();
-
   mouse.initialiseGlobalHeading();
-  // mouse.getLidarDistanceLeft();
 
   delay(1000);
 }
 
 void loop() {
-  // Task 3 Tracking
- //mouse.task3_Tracking(116,100);
-//mouse.getLidarDistanceRight();
-  // Task 3 Driving and Stopping
-   //mouse.drivingAndStopping();
-  //mouse.driveDistanceStraight(50, 150);
-  // Task 3 Turning
-  // mouse.Task3_Turning();
-
-  // Task 3 Chain Motion
-  //chainMovement(mouse, "ffrfl");
-  //chainMovement(mouse, "ffffrflfrfrflflfrfflfrfrflfrflfrffffrflfrffffflflffff");
-  //  mouse.driveDistanceStraight(360, 100);
-  //   mouse.turnAngle(70, -90);
+  // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
   chainMovement(mouse, "ffrfrflflflflfflff");
-  // mouse.printLidar();
-  // delay(500);
-  // mouse.getWallCorrection();
   mouse.printLidar();
-   // 2 cells
-  // mouse.printLidar();
-  // delay(200);
 
-  while (true)
-  {}
+  // Other task 3 routines, for when you want to test one on its own:
+  //   task3_Tracking(mouse, 116, 100);   // drive straight, constant speed
+  //   drivingAndStopping(mouse);         // creep to 100mm off the front wall
+  //   Task3_Turning(mouse);              // turn right, then hold that heading
+  //   mouse.driveDistanceStraight(360, 100);
+  //   mouse.turnByAngle(-90, 70);
+
+  // The run only happens once, so park here rather than repeating it.
+  while (true) {}
 }

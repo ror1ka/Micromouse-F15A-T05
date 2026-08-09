@@ -21,16 +21,18 @@ public:
         return output;
     }
 
-    // Function used to return the last calculated error. 
-    // The error is the difference between the desired position and current position. 
-    float getError() {
+    // Function used to return the last calculated error.
+    // The error is the difference between the desired position and current position.
+    float getError() const {
       return error;
     }
 
-    // Setting function used to update internal parameters
-    void tune(float speed, float deadband) {
-      speed = speed;
-      deadband = deadband;
+    // Setting function used to update internal parameters.
+    // Parameters are named apart from the members so these are real assignments
+    // rather than the self-assignments they used to be.
+    void tune(float newSpeed, float newDeadband) {
+      speed = newSpeed;
+      deadband = newDeadband;
     }
 
     // This must be called before trying to achieve a setpoint.
@@ -43,7 +45,7 @@ public:
 
 private:
     float speed, deadband;
-    float error, output;
+    float error = 0, output = 0;
     float setpoint = 0;
     float zero_ref = 0;
 };

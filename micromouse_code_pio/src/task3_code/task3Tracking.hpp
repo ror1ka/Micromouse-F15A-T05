@@ -1,253 +1,111 @@
+#pragma once
+
 #include <Arduino.h>
 #include "Micromouse.hpp"
 
-int adjustSpeed(Micromouse& mouse, int speed, float dist);
+// Straight-line driving with heading hold only - no distance controller, so the
+// robot runs at a set PWM until the encoders say it has arrived.
+//
+// task3_Tracking and Modified_Tracking were two copies of the same routine that
+// differed only in whether they taper near the target, so they are now one
+// implementation with a flag. Both names are kept as callers still use them.
 
-void task3_Tracking(Micromouse& mouse, float desiredDist, int16_t speed)
-{
-  // Target distance in mm
-  float targetDist{desiredDist};
-  float angleDeadband{0.3f};
-  // Proportional constant for angle error correction controller
-  float Kp{2.0f};
+namespace tracking {
 
-  float errorCorrection{0.0f};
-  float maxCorrection{45.0f};
+// Angle error (deg) below which the heading is treated as correct.
+constexpr float ANGLE_DEADBAND = 0.3f;
+// Proportional gain on heading error.
+constexpr float HEADING_KP = 2.0f;
+// Cap on the heading correction, so it does not swamp the base speed.
+constexpr float MAX_CORRECTION = 45.0f;
+// Distance (mm) from the target over which the taper slows the robot down.
+constexpr float TAPER_ZONE = 40.0f;
+// Slowest PWM that still moves the robot.
+constexpr int MIN_PWM = 30;
 
-  // PWM speed constants
-  int normalSpeed{speed};
-  // int slowSpeed {60};
-  int baselinePWM{0};
-
-  int leftSpeed{0};
-  int rightSpeed{0};
-
-  mouse.resetEnc();
-  mouse.updateMpu();
-  float targetHeading{mouse.getRot()};
-  float currentHeading = mouse.getRot();
-  float headingError = targetHeading - currentHeading;
-
-  float distanceTravelled = mouse.getCurrAvgDist();
-  float remainingDist = targetDist - distanceTravelled;
-
-  while (mouse.getCurrAvgDist() < targetDist)
-  {
-    // Heading/angle stuff
-    mouse.updateMpu();
-    currentHeading = mouse.getRot();
-    headingError = targetHeading - currentHeading;
-
-    // Make heading error within -180 and +180
-    while (headingError < -180)
-    {
-      headingError = headingError + 360;
-    }
-    while (headingError > 180)
-    {
-      headingError = headingError - 360;
-    }
-
-    if (headingError < -angleDeadband || headingError > angleDeadband)
-    {
-      errorCorrection = Kp * headingError;
-    }
-    else
-    {
-      errorCorrection = 0;
-    }
-
-    // Prevent error correction from being too high
-    if (errorCorrection > maxCorrection)
-    {
-      errorCorrection = maxCorrection;
-    }
-    else if (errorCorrection < -maxCorrection)
-    {
-      errorCorrection = -maxCorrection;
-    }
-
-    // Moving forward stuff
-    distanceTravelled = mouse.getCurrAvgDist();
-    remainingDist = targetDist - distanceTravelled;
-
-    // Slow down in last 10 cm to prevent overshoot
-    // if (remainingDist < 100) {
-    //   baselinePWM = slowSpeed;
-    // } else {
-    //   baselinePWM = normalSpeed;
-    // }
-    baselinePWM = normalSpeed;
-
-    // Ensures PWM within -255 and 255
-    leftSpeed = baselinePWM - errorCorrection;
-    if (leftSpeed < -255)
-    {
-      leftSpeed = -255;
-    }
-    else if (leftSpeed > 255)
-    {
-      leftSpeed = 255;
-    }
-
-    rightSpeed = baselinePWM + errorCorrection;
-    if (rightSpeed < -255)
-    {
-      rightSpeed = -255;
-    }
-    else if (rightSpeed > 255)
-    {
-      rightSpeed = 255;
-    }
-    mouse.move(leftSpeed, rightSpeed);
-  }
-  mouse.move(0, 0);
-}
-
-void Modified_Tracking(Micromouse& mouse, float desiredDist, int16_t speed)
-{
-  // Target distance in mm
-  float targetDist{desiredDist};
-  float angleDeadband{0.3f};
-  // Proportional constant for angle error correction controller
-  float Kp{2.0f};
-
-  float errorCorrection{0.0f};
-  float maxCorrection{45.0f};
-
-  // PWM speed constants
-  int normalSpeed{speed};
-  // int slowSpeed {60};
-  int baselinePWM{0};
-
-  int leftSpeed{0};
-  int rightSpeed{0};
-
-  mouse.resetEnc();
-  mouse.updateMpu();
-  float targetHeading{mouse.getRot()};
-  float currentHeading = mouse.getRot();
-  float headingError = targetHeading - currentHeading;
-
-  float distanceTravelled = mouse.getCurrAvgDist();
-  float remainingDist = targetDist - distanceTravelled;
-
-  while (mouse.getCurrAvgDist() < targetDist)
-  {
-    // Heading/angle stuff
-    mouse.updateMpu();
-    currentHeading = mouse.getRot();
-    headingError = targetHeading - currentHeading;
-
-    // Make heading error within -180 and +180
-    while (headingError < -180)
-    {
-      headingError = headingError + 360;
-    }
-    while (headingError > 180)
-    {
-      headingError = headingError - 360;
-    }
-
-    if (headingError < -angleDeadband || headingError > angleDeadband)
-    {
-      errorCorrection = Kp * headingError;
-    }
-    else
-    {
-      errorCorrection = 0;
-    }
-
-    // Prevent error correction from being too high
-    if (errorCorrection > maxCorrection)
-    {
-      errorCorrection = maxCorrection;
-    }
-    else if (errorCorrection < -maxCorrection)
-    {
-      errorCorrection = -maxCorrection;
-    }
-
-    // Moving forward stuff
-    distanceTravelled = mouse.getCurrAvgDist();
-    remainingDist = targetDist - distanceTravelled;
-
-    // Slow down in last 10 cm to prevent overshoot
-    // if (remainingDist < 100) {
-    //   baselinePWM = slowSpeed;
-    // } else {
-    //   baselinePWM = normalSpeed;
-    // }
-    // baselinePWM = normalSpeed;
-
-    baselinePWM = adjustSpeed(mouse, normalSpeed, targetDist);
-
-    // Ensures PWM within -255 and 255
-    leftSpeed = baselinePWM - errorCorrection;
-    // if (leftSpeed < -255) {
-    //   leftSpeed = -255;
-    // } else if (leftSpeed > 255) {
-    //   leftSpeed = 255;
-    // }
-
-    rightSpeed = baselinePWM + errorCorrection;
-    // if (rightSpeed < -255) {
-    //   rightSpeed = -255;
-    // } else if (rightSpeed > 255) {
-    //   rightSpeed = 255;
-    // }
-
-    if (normalSpeed > 0)
-    {
-      if (leftSpeed < 30)
-        leftSpeed = 30;
-      if (rightSpeed < 30)
-        rightSpeed = 30;
-      if (leftSpeed > 255)
-        leftSpeed = 255;
-      if (rightSpeed > 255)
-        rightSpeed = 255;
-    }
-    else
-    {
-      if (leftSpeed > -30)
-        leftSpeed = -30;
-      if (rightSpeed > -30)
-        rightSpeed = -30;
-      if (leftSpeed < -255)
-        leftSpeed = -255;
-      if (rightSpeed < -255)
-        rightSpeed = -255;
-    }
-
-    mouse.move(leftSpeed, rightSpeed);
-  }
-  mouse.move(0, 0);
-}
-
-int adjustSpeed(Micromouse& mouse, int speed, float dist)
-{
-  int currDist = mouse.getCurrAvgDist();
-  int leftover = dist - currDist;
-
-  if (leftover > 40.0f)
-  {
+// Scales `speed` down over the last TAPER_ZONE mm, without dropping below the
+// PWM at which the motors stall. `remaining` is signed and matches speed's sign
+// while the robot is still short of the target.
+inline int adjustSpeed(float remaining, int speed) {
+  if (abs(remaining) > TAPER_ZONE) {
     return speed;
   }
-  else
-  {
-    int min = 30;
-    int scale = (speed * leftover) / 40.0f;
 
-    if (speed > 0 && scale < min)
-    {
-      return min;
-    }
-    else if (speed < 0 && speed > -min)
-    {
-      return -min;
-    }
+  int scale = speed * abs(remaining) / TAPER_ZONE;
 
-    return scale;
+  if (speed > 0) {
+    return (scale < MIN_PWM) ? MIN_PWM : scale;
   }
+  return (scale > -MIN_PWM) ? -MIN_PWM : scale;
+}
+
+}  // namespace tracking
+
+// Drive `distance` mm while holding the heading the robot started on.
+// The sign of `speed` sets the direction: negative reverses, and `distance` is
+// always given as a positive magnitude.
+// `taperNearTarget` slows the last TAPER_ZONE mm to cut down overshoot.
+inline void trackStraight(Micromouse& mouse, float distance, int16_t speed, bool taperNearTarget) {
+  // Signed target, so reversing terminates instead of looping forever waiting
+  // for a distance that is getting more negative to exceed a positive target.
+  const float target = (speed >= 0) ? abs(distance) : -abs(distance);
+
+  mouse.resetEnc();
+  mouse.updateMpu();
+  const float targetHeading = mouse.getRot();
+
+  while (true) {
+    const float travelled = mouse.getCurrAvgDist();
+    const float remaining = target - travelled;
+
+    // Done once the robot has reached the target from whichever side it
+    // started on.
+    if ((speed >= 0 && travelled >= target) || (speed < 0 && travelled <= target)) {
+      break;
+    }
+
+    mouse.updateMpu();
+    const float headingError = Micromouse::normaliseAngle(targetHeading - mouse.getRot());
+
+    float errorCorrection = 0.0f;
+    if (abs(headingError) > tracking::ANGLE_DEADBAND) {
+      errorCorrection = tracking::HEADING_KP * headingError;
+      errorCorrection = constrain(errorCorrection, -tracking::MAX_CORRECTION,
+                                  tracking::MAX_CORRECTION);
+    }
+
+    const int baselinePWM = taperNearTarget ? tracking::adjustSpeed(remaining, speed) : speed;
+
+    int leftSpeed = baselinePWM - errorCorrection;
+    int rightSpeed = baselinePWM + errorCorrection;
+
+    if (taperNearTarget) {
+      // Keep both wheels above the stall PWM, otherwise the heading correction
+      // can drop the inside wheel to a value that just buzzes.
+      if (speed > 0) {
+        leftSpeed = constrain(leftSpeed, tracking::MIN_PWM, MAX_PWM);
+        rightSpeed = constrain(rightSpeed, tracking::MIN_PWM, MAX_PWM);
+      } else {
+        leftSpeed = constrain(leftSpeed, -MAX_PWM, -tracking::MIN_PWM);
+        rightSpeed = constrain(rightSpeed, -MAX_PWM, -tracking::MIN_PWM);
+      }
+    } else {
+      leftSpeed = constrain(leftSpeed, -MAX_PWM, MAX_PWM);
+      rightSpeed = constrain(rightSpeed, -MAX_PWM, MAX_PWM);
+    }
+
+    mouse.move(leftSpeed, rightSpeed);
+  }
+
+  mouse.move(0, 0);
+}
+
+// Constant speed the whole way. Overshoots, but predictable.
+inline void task3_Tracking(Micromouse& mouse, float desiredDist, int16_t speed) {
+  trackStraight(mouse, desiredDist, speed, false);
+}
+
+// Tapers over the last TAPER_ZONE mm. Use this one for short corrective moves.
+inline void Modified_Tracking(Micromouse& mouse, float desiredDist, int16_t speed) {
+  trackStraight(mouse, desiredDist, speed, true);
 }
