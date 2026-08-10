@@ -266,6 +266,201 @@ public:
         }
     }
 
+    //////// Profiled routines ////////
+
+    // Drive `targetDistance` mm holding the starting heading, under a trapezoidal
+    // speed profile: ramp up out of rest, cruise at maxPWM, ramp back down as the
+    // target approaches.
+    //
+    // The profile is an envelope, not a setpoint. It caps how much PWM the
+    // distance PID is allowed to ask for at each point in the move, which leaves
+    // one control law in charge the whole way - landing on the target is still
+    // the PID's job - while stopping it slamming to full PWM off the line or
+    // carrying cruise speed into the target.
+    //
+    // ONLY PASS A POSITIVE maxPWM. To go backwards make targetDistance negative.
+    void driveDistanceProfiled(float targetDistance, int maxPWM) {
+        // Same gains driveDistanceStraight settled on. Ki stays 0 - the stiction
+        // floor, not an integral, is what clears the last millimetre.
+        PIDController distancePid(1.2f, 0.0f, 0.25f);
+        const float headingKp = 2.0f;
+
+        // Deadbands, mm and degrees. The heading band is wider than
+        // driveDistanceStraight's 0.6 - see the stiction floor below.
+        const float distanceDeadband = 3.0f;
+        const float headingDeadband = 1.5f;
+
+        // How much of the move is given over to ramping. If the move is too
+        // short to fit both, profileCap's two limits overlap and the trapezoid
+        // collapses into a triangle on its own.
+        const float accelDistance = 40.0f;
+        const float decelDistance = 70.0f;
+
+        const float intLimit = 100.0f;
+        const float maxHeadingCorrection = 45.0f;
+
+        const unsigned long loopTime = 10;
+        const unsigned long timeBeforeConsideredSettled = 200;
+
+        maxPWM = constrain(abs(maxPWM), MIN_MOVING_PWM, MAX_PWM);
+        distancePid.setLimits(intLimit, (float)MAX_PWM);
+
+        drive.resetEnc();
+        imu.update();
+
+        const float baseHeading = getRot();
+        distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
+
+        unsigned long previousLoopTime = millis();
+        unsigned long timeWhenInitiallySettled = 0;
+
+        while (true) {
+            unsigned long currentTime = millis();
+            // Keeps dt away from zero, which would blow the derivative term up.
+            if (currentTime - previousLoopTime < loopTime) {
+                continue;
+            }
+            previousLoopTime = currentTime;
+            imu.update();
+
+            const float travelled = drive.getCurrAvgDist();
+            const float distanceError = targetDistance - travelled;
+            const float headingError = Imu::normaliseAngle(baseHeading - getRot());
+
+            const bool inDistDeadband = abs(distanceError) <= distanceDeadband;
+            const bool inAngleDeadband = abs(headingError) <= headingDeadband;
+
+            if (inDistDeadband) {
+                distancePid.resetIntegral();
+            }
+
+            float distancePWM = distancePid.compute(travelled);
+
+            // The trapezoid. Both ends are measured along the move, so this is
+            // purely a function of position - no velocity estimate needed.
+            const float cap = profileCap(abs(travelled), abs(distanceError), accelDistance,
+                                         decelDistance, (float)maxPWM, (float)MIN_MOVING_PWM);
+            distancePWM = constrain(distancePWM, -cap, cap);
+
+            if (inDistDeadband) {
+                distancePWM = 0;
+            } else if (abs(distancePWM) < MIN_MOVING_PWM) {
+                distancePWM = (distanceError > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
+            }
+
+            float headingPWM = headingKp * headingError;
+            headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
+
+            if (inAngleDeadband) {
+                headingPWM = 0;
+            } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
+                // Parked on the target but off-heading, and the P term is too
+                // small to break stiction. The wider deadband above is what stops
+                // this becoming the limit cycle driveDistanceStraight can fall
+                // into: MIN_TURNING_PWM for one 10ms tick has to rotate the robot
+                // less than the band is wide, or it lands on the far side and
+                // kicks straight back.
+                headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+            }
+
+            drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
+
+            if (inDistDeadband && inAngleDeadband) {
+                if (timeWhenInitiallySettled == 0) {
+                    timeWhenInitiallySettled = currentTime;
+                }
+
+                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                    drive.stop();
+                    return;
+                }
+            } else {
+                timeWhenInitiallySettled = 0;
+            }
+        }
+    }
+
+    // Turn by `angleToTurn` degrees under the same trapezoidal envelope, tracking
+    // the absolute global heading so per-turn error does not accumulate over a
+    // run - the same bookkeeping turnByAngle does.
+    //
+    // maxTurningPWM should always be +ve; angleToTurn may be either sign.
+    void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
+        const float turnKp = 2.0f;
+        // Left at zero deliberately. The decel ramp below already does the
+        // damping a D term would, and an untuned D on a 10ms gyro sample is more
+        // likely to chatter than to help. If the turn still overshoots on the
+        // bench, this is the one number to raise - start around 0.05.
+        const float turnKd = 0.0f;
+
+        // Widened from turnByAngle's 0.5 for the reason given at the floor below.
+        const float angleDeadband = 1.2f;
+
+        const float accelAngle = 15.0f;
+        const float decelAngle = 35.0f;
+
+        const unsigned long loopTime = 10;
+        const unsigned long timeBeforeConsideredSettled = 200;
+
+        // PIDController subtracts raw floats, which cannot express an angle that
+        // wraps at +/-180. Feeding it the already-wrapped error against a zero
+        // setpoint gets the I and D terms without letting it do the subtraction.
+        PIDController turnPid(turnKp, 0.0f, turnKd);
+        turnPid.zeroAndSetTarget(0.0f, 0.0f);
+        turnPid.setLimits(0.0f, (float)MAX_PWM);
+
+        targetGlobalHeading = Imu::normaliseAngle(targetGlobalHeading + angleToTurn);
+        maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
+
+        imu.update();
+        const float startHeading = getRot();
+
+        unsigned long previousLoopTime = millis();
+        unsigned long timeWhenInitiallySettled = 0;
+
+        while (true) {
+            unsigned long currentTime = millis();
+            if (currentTime - previousLoopTime < loopTime) {
+                continue;
+            }
+            previousLoopTime = currentTime;
+            imu.update();
+
+            const float angleError = Imu::normaliseAngle(targetGlobalHeading - getRot());
+            const float turnedSoFar = abs(Imu::normaliseAngle(getRot() - startHeading));
+            const bool inDeadband = abs(angleError) <= angleDeadband;
+
+            float turningPWM = turnPid.compute(-angleError);
+
+            const float cap = profileCap(turnedSoFar, abs(angleError), accelAngle, decelAngle,
+                                         (float)maxTurningPWM, (float)MIN_TURNING_PWM);
+            turningPWM = constrain(turningPWM, -cap, cap);
+
+            if (inDeadband) {
+                turningPWM = 0;
+            } else if (abs(turningPWM) < MIN_TURNING_PWM) {
+                // Signed off the error rather than off turningPWM, which can be
+                // exactly zero here and would then pick a direction at random.
+                turningPWM = (angleError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+            }
+
+            drive.setForwardPWMVelocity(-turningPWM, turningPWM);
+
+            if (inDeadband) {
+                if (timeWhenInitiallySettled == 0) {
+                    timeWhenInitiallySettled = currentTime;
+                }
+
+                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                    drive.stop();
+                    return;
+                }
+            } else {
+                timeWhenInitiallySettled = 0;
+            }
+        }
+    }
+
     //////// Wall sensing ////////
 
     // Offset in mm from the centre of the corridor: +ve means the robot is too
@@ -301,6 +496,32 @@ private:
 
     float getRot() { return imu.getAngleZ(); }
 
+    // The trapezoid, shared by both profiled routines. Returns the largest
+    // output allowed this tick: ramping up over the first `rampUp` of the move,
+    // flat at `maxOutput` through the middle, ramping back down over the last
+    // `rampDown`. Both units are whatever the caller measures in - mm for a
+    // drive, degrees for a turn.
+    //
+    // Never returns less than `minOutput`. A ramp that decays to zero would
+    // forbid the last few millimetres of a move, and the robot would stall just
+    // short of the target with the controller still asking it to move.
+    static float profileCap(float covered, float remaining, float rampUp, float rampDown,
+                            float maxOutput, float minOutput) {
+        float cap = maxOutput;
+
+        if (rampUp > 0 && covered < rampUp) {
+            const float accelCap = maxOutput * (covered / rampUp);
+            cap = min(cap, accelCap);
+        }
+
+        if (rampDown > 0 && remaining < rampDown) {
+            const float decelCap = maxOutput * (remaining / rampDown);
+            cap = min(cap, decelCap);
+        }
+
+        return max(cap, minOutput);
+    }
+    
     // Shared body of turnLeft/turnRight.
     // dir = +1 turns left (heading increasing), -1 turns right (decreasing).
     void turnUntilHeading(int16_t speed, float target, float err, int8_t dir) {

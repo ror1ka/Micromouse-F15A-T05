@@ -45,7 +45,7 @@ constexpr int RIGHT = 2;
 
 // Nominal quarter turns. TURN_RIGHT is 89 rather than 90 to compensate for the
 // robot consistently overshooting to the right by about a degree.
-constexpr float TURN_LEFT = 90.0f;
+constexpr float TURN_LEFT = 89.0f;
 constexpr float TURN_RIGHT = -89.0f;
 
 // Angle (deg) remaining at which turnLeft/turnRight start scaling speed down.

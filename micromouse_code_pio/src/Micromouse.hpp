@@ -25,6 +25,7 @@ public:
 
   //////// Setup ////////
   // Wire.begin() must have been called before either of these.
+  void setupOled() { oledDisplay.setup(); }
   void setupIMU() { imuSensor.setup(); }
   void setupLidar() { lidarArray.setup(); }
   void initialiseGlobalHeading() { motion.initialiseGlobalHeading(); }
@@ -34,6 +35,7 @@ public:
   Imu& imu() { return imuSensor; }
   LidarArray& lidar() { return lidarArray; }
   Movement& movement() { return motion; }
+  Oled& oled() { return oledDisplay; }
 
   //////// Motors ////////
   void turnMotorLeft(int16_t speed) { drivetrain.turnMotorLeft(speed); }
@@ -54,6 +56,13 @@ public:
   void turnByAngle(float angleToTurn, int maxTurningPWM) {
     motion.turnByAngle(angleToTurn, maxTurningPWM);
   }
+  void driveDistanceProfiled(float targetDistance, int maxPWM) {
+    motion.driveDistanceProfiled(targetDistance, maxPWM);
+  }
+  void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
+    motion.turnByAngleProfiled(angleToTurn, maxTurningPWM);
+  }
+
 
   //////// Sensors ////////
   int getLidarDistanceFront() { return lidarArray.readFront(); }
@@ -87,4 +96,5 @@ private:
   Imu imuSensor;
   LidarArray lidarArray;
   Movement motion;
+  Oled oledDisplay;
 };
