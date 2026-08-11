@@ -4,6 +4,9 @@
 #include <MPU6050_light.h>
 #include <Wire.h>
 
+// Any rotation below this is ignored
+static constexpr float DEADBAND_THRESHOLD = 0.5;
+
 // Thin wrapper around the MPU6050. The robot only ever uses the Z axis (yaw),
 // so that is all this exposes.
 //
@@ -29,18 +32,44 @@ public:
 
         Serial.println(F("Calculating offsets, do not move MPU6050"));
         delay(1000);
-        // mpu.upsideDownMounting = true; // uncomment this line if the MPU6050 is mounted upside-down
+        // mpu.upsideDownMounting = true;
         mpu.calcOffsets();  // gyro and accelero
         Serial.println(F("Done!\n"));
+
+        // Custom integration timer
+        lastUpdateTime = millis();
+        customAngleZ = 0.0;
     }
 
     void update() {
         mpu.update();
+
+        unsigned long now = millis();
+        float dt = (now - lastUpdateTime) / 1000.0; // Convert milliseconds to seconds
+        lastUpdateTime = now;
+
+        // Get the current rotational speed
+        float dZ = mpu.getGyroZ();
+
+        // If rotation is less than our threshold, treat it as 0 to stop drift
+        // while the rover is stopped or driving straight.
+        if (abs(dZ) > DEADBAND_THRESHOLD) {
+            customAngleZ += dZ * dt;
+        }
+    }
+
+    void resetHeading() {
+        customAngleZ = 0.0;
     }
 
     // Current yaw in degrees. Free-running: it is not wrapped to +/-180.
     float getAngleZ() {
         return mpu.getAngleZ();
+    }
+
+    // Custom Heading yaw in degrees. (Needs testing)
+    float getAngleZCustom() {
+        return customAngleZ;
     }
 
     void print() {
@@ -68,4 +97,7 @@ private:
     static constexpr uint8_t GYRO_RANGE_500_DPS = 0x08;  // range 1 (+/-500 deg/s)
 
     MPU6050 mpu;
+
+    float customAngleZ = 0.0;
+    unsigned long lastUpdateTime = 0;
 };
