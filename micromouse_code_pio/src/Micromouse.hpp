@@ -67,6 +67,12 @@ public:
   void driveDistanceProfiledLidar(float targetDistance, int maxPWM) {
     motion.driveDistanceProfiledLidar(targetDistance, maxPWM);
   }
+  // Same LiDAR steering and front stop as driveDistanceProfiledLidar, but cruises
+  // at a constant PWM and hands the last stretch to the distance PID instead of
+  // running one PID under a trapezoidal envelope.
+  void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
+    motion.driveDistanceCruiseLidar(targetDistance, cruisePWM);
+  }
 
 
   //////// Sensors ////////
