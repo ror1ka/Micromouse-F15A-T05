@@ -74,7 +74,8 @@ public:
   int getLidarDistanceFront() { return lidarArray.readFront(); }
   int getLidarDistanceLeft() { return lidarArray.readLeft(); }
   int getLidarDistanceRight() { return lidarArray.readRight(); }
-  int getMedianDistance() { return lidarArray.getMedianDistance(); }
+  int getMedianDistance(LidarArray::Id id) { return lidarArray.getMedianDistance(id); }
+
 
   // Non-blocking sampler: poll() advances it, the rest read what it has found.
   void pollLidar() { lidarArray.poll(); }

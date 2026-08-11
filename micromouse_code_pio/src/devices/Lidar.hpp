@@ -178,12 +178,12 @@ public:
 
     // Median of several front readings, to reject the occasional wild sample.
     // Returns NO_READING when every reading failed.
-    int getMedianDistance() {
+    int getMedianDistance(Id id) {
         int readings[MEDIAN_SAMPLES];
         int validReadings = 0;
 
         for (int i = 0; i < MEDIAN_SAMPLES; i++) {
-            int distance = readFront();
+            int distance = read(id);
             if (distance >= 0) {
                 readings[validReadings] = distance;
                 validReadings++;

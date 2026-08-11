@@ -632,13 +632,12 @@ public:
         turnPid.zeroAndSetTarget(0.0f, 0.0f);
         turnPid.setLimits(0.0f, (float)MAX_PWM);
 
-        targetGlobalHeading = Imu::normaliseAngle(targetGlobalHeading + angleToTurn);
-        maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
-
         imu.resetHeading();
 
         imu.update();
         const float startHeading = imu.getAngleZCustom();
+        targetGlobalHeading = Imu::normaliseAngle(imu.getAngleZCustom() + angleToTurn);
+        maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
 
         unsigned long previousLoopTime = millis();
         unsigned long timeWhenInitiallySettled = 0;
