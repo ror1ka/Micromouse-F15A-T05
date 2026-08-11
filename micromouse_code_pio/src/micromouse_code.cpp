@@ -49,7 +49,7 @@ void loop() {
   // }
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
-  chainMovement(mouse, "ffrflfrrflflff");
+  chainMovement(mouse, "lfrffffffrflf");
   // mouse.printLidar();
 
   // Other task 3 routines, for when you want to test one on its own:

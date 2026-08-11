@@ -62,17 +62,34 @@ public:
   void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
     motion.turnByAngleProfiled(angleToTurn, maxTurningPWM);
   }
+  // As driveDistanceProfiled, but steers off the side LiDARs to stay centred in
+  // the corridor and stops short of any wall it finds ahead.
+  void driveDistanceProfiledLidar(float targetDistance, int maxPWM) {
+    motion.driveDistanceProfiledLidar(targetDistance, maxPWM);
+  }
 
 
   //////// Sensors ////////
+  // Blocking reads. Fine between moves, too slow inside a control loop.
   int getLidarDistanceFront() { return lidarArray.readFront(); }
   int getLidarDistanceLeft() { return lidarArray.readLeft(); }
   int getLidarDistanceRight() { return lidarArray.readRight(); }
   int getMedianDistance() { return lidarArray.getMedianDistance(); }
+
+  // Non-blocking sampler: poll() advances it, the rest read what it has found.
+  void pollLidar() { lidarArray.poll(); }
+  void refreshLidar() { lidarArray.refreshAll(); }
+  int latestLidarFront() { return lidarArray.latestFront(); }
+  int latestLidarLeft() { return lidarArray.latestLeft(); }
+  int latestLidarRight() { return lidarArray.latestRight(); }
+
   bool getWallOffset(float& offset) { return motion.getWallOffset(offset); }
+  float frontTravelLimit() { return motion.frontTravelLimit(); }
+  bool frontWallTooClose() { return motion.frontWallTooClose(); }
 
   void updateMpu() { imuSensor.update(); }
   float getRot() { return imuSensor.getAngleZ(); }
+  float getRotCust() { return imuSensor.getAngleZCustom(); }
   float getPrevRot() const { return motion.getPrevRot(); }
   static float normaliseAngle(float angle) { return Imu::normaliseAngle(angle); }
 
