@@ -380,6 +380,229 @@ public:
         }
     }
 
+    // driveDistanceProfiled with the side LiDARs steering as well.
+    //
+    // Everything about the distance control is identical - same gains, same
+    // trapezoid, same settle test. The only difference is the heading it holds:
+    // instead of pinning the starting heading for the whole move, the setpoint is
+    // nudged by `wallTrim`, an angle derived from how far off-centre the side
+    // LiDARs say the robot is. Steering, not a wheel-speed split, is what corrects
+    // the offset, so the existing heading P term does the work and there is no
+    // second controller fighting it for the motors.
+    //
+    // That makes this a cascade: the LiDAR loop sets a heading, the heading loop
+    // chases it, and it is deliberately the slower of the two. The sensors are
+    // sampled by LidarArray::poll() - which never blocks - and the trim is
+    // recomputed every WALL_SAMPLE_INTERVAL from whatever the newest completed
+    // measurement is. Each sensor refreshes about every 75ms, so anything faster
+    // would only be re-reading the same number.
+    //
+    // The front sensor is not steered on. It caps how far the move is allowed to
+    // go, so the robot decelerates into a wall ahead and stops FRONT_STOP_DISTANCE
+    // short of it even if the caller asked to drive further. See frontTravelLimit.
+    //
+    // Forward moves only, in the sense that the trim is only applied while
+    // targetDistance > 0. Reversing swings the tail the opposite way to the nose,
+    // so the same correction would drive the robot into the wall it is trying to
+    // back away from; with no trim this degrades to plain driveDistanceProfiled.
+    //
+    // ONLY PASS A POSITIVE maxPWM. To go backwards make targetDistance negative.
+    void driveDistanceProfiledLidar(float targetDistance, int maxPWM) {
+        PIDController distancePid(1.2f, 0.0f, 0.25f);
+        const float headingKp = 2.0f;
+
+        const float distanceDeadband = 3.0f;
+        const float headingDeadband = 1.5f;
+
+        const float accelDistance = 40.0f;
+        const float decelDistance = 70.0f;
+
+        const float intLimit = 100.0f;
+        const float maxHeadingCorrection = 45.0f;
+
+        // How much of the new offset each sample is allowed to move the trim.
+        // Low, because a wall appearing or vanishing at a junction is a step
+        // change in the raw offset and should not be a step change in heading.
+        const float wallTrimSlew = 0.3f;
+        // Same idea for the rate of change of the offset, which is noisier still.
+        const float offsetRateSlew = 0.4f;
+
+        const unsigned long loopTime = 10;
+        const unsigned long timeBeforeConsideredSettled = 200;
+
+        maxPWM = constrain(abs(maxPWM), MIN_MOVING_PWM, MAX_PWM);
+        distancePid.setLimits(intLimit, (float)MAX_PWM);
+
+        drive.resetEnc();
+        imu.update();
+
+        // Fill the range cache before the first tick, so the front guard and the
+        // steering start the move with real numbers rather than the last move's.
+        lidar.refreshAll();
+
+        const float baseHeading = getRot();
+        distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
+
+        // Offset applied to baseHeading, in degrees. +ve steers left.
+        float wallTrim = 0.0f;
+        float previousOffset = 0.0f;
+        float offsetRate = 0.0f;
+        bool haveOffset = false;
+        unsigned long lastWallSample = 0;
+
+        // Odometry at the moment the cached front reading was actually taken,
+        // so the guard can subtract off travel the sensor has not seen yet.
+        unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
+        float travelledAtFrontSample = 0.0f;
+
+        unsigned long previousLoopTime = millis();
+        unsigned long timeWhenInitiallySettled = 0;
+
+        while (true) {
+            unsigned long currentTime = millis();
+            if (currentTime - previousLoopTime < loopTime) {
+                continue;
+            }
+            previousLoopTime = currentTime;
+            imu.update();
+            // Advances one measurement. Costs a register read or two, no waiting.
+            lidar.poll();
+
+            const float travelled = drive.getCurrAvgDist();
+
+            // A new front measurement describes where the robot was when the
+            // sensor fired, so pin the odometry to it and age it from there.
+            const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
+            if (newFrontStamp != frontStamp) {
+                frontStamp = newFrontStamp;
+                travelledAtFrontSample = travelled;
+            }
+
+            const float distanceError = targetDistance - travelled;
+
+            // How much travel the wall ahead allows, if there is one. Only ever
+            // shortens the move - the front sensor cannot ask for more.
+            float remaining = distanceError;
+            bool frontLimited = false;
+
+            if (targetDistance > 0) {
+                const float frontAllows =
+                    frontTravelLimit() - (travelled - travelledAtFrontSample);
+                if (frontAllows < remaining) {
+                    remaining = frontAllows;
+                    frontLimited = true;
+                }
+            }
+
+            // Front-limited, the move is over once the standoff is reached; there
+            // is no undershoot to correct because stopping short is the point.
+            const bool inDistDeadband = frontLimited ? (remaining <= distanceDeadband)
+                                                     : (abs(distanceError) <= distanceDeadband);
+
+            // Sampled only while there is still travel left to correct with.
+            // Once parked on the target the robot can only rotate, and rotating
+            // does not re-centre it - it would just refuse to settle. So the trim
+            // is decayed out from there and the move finishes square to the
+            // corridor rather than angled across it.
+            if (targetDistance > 0 && !inDistDeadband &&
+                currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
+                const float sampleDt = (currentTime - lastWallSample) / 1000.0f;
+                lastWallSample = currentTime;
+
+                float offset;
+                if (getWallOffset(offset)) {
+                    // Rate of change of the offset, in mm/s. Only meaningful
+                    // against a previous offset measured the same way, so the
+                    // first sample after a gap only seeds it.
+                    if (haveOffset && sampleDt > 0) {
+                        const float rate = (offset - previousOffset) / sampleDt;
+                        offsetRate = (1.0f - offsetRateSlew) * offsetRate + offsetRateSlew * rate;
+                    } else {
+                        offsetRate = 0.0f;
+                    }
+
+                    previousOffset = offset;
+                    haveOffset = true;
+
+                    // +ve offset means too far right, and a +ve trim steers
+                    // left, so the sign carries straight through. The rate term
+                    // subtracts, so closing on the centre eases the steering off
+                    // before the robot arrives rather than after it.
+                    float trim = WALL_TRIM_KP * offset + WALL_TRIM_KD * offsetRate;
+                    trim = constrain(trim, -MAX_WALL_TRIM, MAX_WALL_TRIM);
+                    wallTrim = (1.0f - wallTrimSlew) * wallTrim + wallTrimSlew * trim;
+                } else {
+                    // Open on both sides - nothing to centre against, so let the
+                    // correction fade instead of holding the last one, and drop
+                    // the history so the next wall does not produce a huge rate.
+                    haveOffset = false;
+                    offsetRate = 0.0f;
+                    wallTrim = (1.0f - wallTrimSlew) * wallTrim;
+                }
+            } else if (inDistDeadband || targetDistance <= 0) {
+                wallTrim = (1.0f - wallTrimSlew) * wallTrim;
+            }
+
+            const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
+            const bool inAngleDeadband = abs(headingError) <= headingDeadband;
+
+            if (inDistDeadband) {
+                distancePid.resetIntegral();
+            }
+
+            float distancePWM = distancePid.compute(travelled);
+
+            // Profiled against `remaining`, not the commanded error, so a wall
+            // ahead brings the robot down the decel ramp instead of into it.
+            const float cap = profileCap(abs(travelled), abs(remaining), accelDistance,
+                                         decelDistance, (float)maxPWM, (float)MIN_MOVING_PWM);
+            distancePWM = constrain(distancePWM, -cap, cap);
+
+            if (inDistDeadband) {
+                distancePWM = 0;
+            } else if (abs(distancePWM) < MIN_MOVING_PWM) {
+                distancePWM = (distanceError > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
+            }
+
+            float headingPWM = headingKp * headingError;
+            headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
+
+            if (inAngleDeadband) {
+                headingPWM = 0;
+            } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
+                // Same stiction floor, and the same reason for the wider heading
+                // deadband, as driveDistanceProfiled.
+                headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+            }
+
+            drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
+
+            if (inDistDeadband && inAngleDeadband) {
+                if (timeWhenInitiallySettled == 0) {
+                    timeWhenInitiallySettled = currentTime;
+                }
+
+                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                    drive.stop();
+
+                    // The move ended on the wall rather than on the odometry, so
+                    // the robot is not where the caller asked it to be. Say so -
+                    // silently travelling less than requested is the sort of
+                    // thing that turns into a mystery three commands later.
+                    if (frontLimited) {
+                        Serial.print(F("front wall: stopped "));
+                        Serial.print(distanceError);
+                        Serial.println(F("mm short"));
+                    }
+
+                    return;
+                }
+            } else {
+                timeWhenInitiallySettled = 0;
+            }
+        }
+    }
+
     // Turn by `angleToTurn` degrees under the same trapezoidal envelope, tracking
     // the absolute global heading so per-turn error does not accumulate over a
     // run - the same bookkeeping turnByAngle does.
@@ -412,8 +635,10 @@ public:
         targetGlobalHeading = Imu::normaliseAngle(targetGlobalHeading + angleToTurn);
         maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
 
+        imu.resetHeading();
+
         imu.update();
-        const float startHeading = getRot();
+        const float startHeading = imu.getAngleZCustom();
 
         unsigned long previousLoopTime = millis();
         unsigned long timeWhenInitiallySettled = 0;
@@ -426,8 +651,8 @@ public:
             previousLoopTime = currentTime;
             imu.update();
 
-            const float angleError = Imu::normaliseAngle(targetGlobalHeading - getRot());
-            const float turnedSoFar = abs(Imu::normaliseAngle(getRot() - startHeading));
+            const float angleError = Imu::normaliseAngle(targetGlobalHeading - imu.getAngleZCustom());
+            const float turnedSoFar = abs(Imu::normaliseAngle(imu.getAngleZCustom() - startHeading));
             const bool inDeadband = abs(angleError) <= angleDeadband;
 
             float turningPWM = turnPid.compute(-angleError);
@@ -466,24 +691,74 @@ public:
     // Offset in mm from the centre of the corridor: +ve means the robot is too
     // far RIGHT and should steer left. Returns false when neither side wall is
     // visible, in which case there is nothing to centre against.
+    //
+    // Reads the cache LidarArray::poll() fills, so a caller that wants live
+    // numbers has to be polling. A control loop already is; anything else should
+    // call refreshAll() first.
     bool getWallOffset(float& offset) {
-        float left = lidar.readLeft();
-        float right = lidar.readRight();
+        const int left = lidar.latestLeft();
+        const int right = lidar.latestRight();
 
-        bool leftWall = (left > 0 && left < WALL_THRESHOLD);
-        bool rightWall = (right > 0 && right < WALL_THRESHOLD);
+        const bool leftWall = (left > 0 && left < WALL_THRESHOLD);
+        const bool rightWall = (right > 0 && right < WALL_THRESHOLD);
 
         if (leftWall && rightWall) {
-            // Halved because moving 5mm right grows left by 5 AND shrinks right by 5.
-            offset = ((left - SIDE_BIAS) - right) / 2.0f;
+            const float leftDist = left - SIDE_BIAS;
+
+            // Both walls in view, so the corridor is fully described. Half the
+            // span between them is exactly the clearance a centred robot has -
+            // and it does not depend on where the robot currently is, since
+            // moving 5mm right grows one side by 5 and shrinks the other by 5.
+            // Remember it, so a stretch with only one wall centres on this
+            // corridor's real width instead of a constant measured off-robot.
+            const float span = (leftDist + right) / 2.0f;
+            learnedHalfSpan = constrain(span, MIN_HALF_SPAN, MAX_HALF_SPAN);
+
+            // Halved for the same reason: the difference counts the error twice.
+            offset = (leftDist - right) / 2.0f;
             return true;
         }
-        if (leftWall)  { offset = (left - SIDE_BIAS) - WALL_SETPOINT; return true; }
-        if (rightWall) { offset = WALL_SETPOINT - right;              return true; }
+
+        // One wall only. Hold it at the clearance a centred robot had last time
+        // both walls were visible, falling back to the surveyed value until then.
+        const float setpoint = (learnedHalfSpan > 0) ? learnedHalfSpan : WALL_SETPOINT;
+
+        if (leftWall)  { offset = (left - SIDE_BIAS) - setpoint; return true; }
+        if (rightWall) { offset = setpoint - right;              return true; }
 
         offset = 0.0f;
         return false;
     }
+
+    // How much further the robot may drive before it is FRONT_STOP_DISTANCE from
+    // the wall ahead. Returns NO_FRONT_LIMIT when nothing is close enough in
+    // front to matter, and a negative number when the robot is already too close
+    // and should be backing off.
+    //
+    // Reads the polled cache, so the answer is as old as the last front
+    // measurement - up to about 75ms. Callers that are moving should subtract
+    // the distance travelled since LidarArray::readingStamp(Front) last changed,
+    // which is what driveDistanceProfiledLidar does.
+    float frontTravelLimit() {
+        const int front = lidar.latestFront();
+
+        // NO_READING is open space as far as the front is concerned: the sensor
+        // answered and saw nothing within range.
+        if (front < 0 || front > FRONT_WALL_THRESHOLD) {
+            return NO_FRONT_LIMIT;
+        }
+
+        return (float)front - FRONT_STOP_DISTANCE;
+    }
+
+    // True when there is a wall close enough ahead to be worth stopping for.
+    bool frontWallTooClose() {
+        return frontTravelLimit() <= 0.0f;
+    }
+
+    // Stands in for "no wall ahead". Large enough that it never wins a min()
+    // against a real move, small enough to stay well clear of float precision.
+    static constexpr float NO_FRONT_LIMIT = 100000.0f;
 
     // Heading recorded at the end of the last turnLeft/turnRight.
     float getPrevRot() const { return prevRot; }
@@ -493,6 +768,12 @@ private:
     // constexpr the compiler strips the disabled branch out of the firmware,
     // so leaving it here costs nothing until it is switched on.
     static constexpr bool ENABLE_WALL_FOLLOW = false;
+
+    // Bounds on the clearance getWallOffset is allowed to learn, in mm. A pair
+    // of readings that implies a corridor outside this is not a corridor - it is
+    // a bad measurement, or the robot is sitting diagonally across a junction.
+    static constexpr float MIN_HALF_SPAN = 25.0f;
+    static constexpr float MAX_HALF_SPAN = 80.0f;
 
     float getRot() { return imu.getAngleZ(); }
 
@@ -560,4 +841,8 @@ private:
     // Absolute heading the robot is trying to hold, maintained by turnByAngle so
     // that the error in individual turns does not accumulate over a run.
     float targetGlobalHeading = 0;
+
+    // Side clearance of a centred robot, measured the last time both walls were
+    // visible at once. Zero until that has happened. See getWallOffset.
+    float learnedHalfSpan = 0;
 };

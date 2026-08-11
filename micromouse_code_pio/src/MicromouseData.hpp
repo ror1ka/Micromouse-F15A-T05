@@ -65,11 +65,27 @@ constexpr float WALL_SETPOINT = 48.0f;
 // Measured left-right difference of 12mm, but that is only valid if the robot
 // was dead centre when it was measured - verify before trusting a non-zero value.
 constexpr float SIDE_BIAS = 0.0f;
-// 10mm of offset gives roughly 12 PWM of split between the wheels.
+// Degrees of steering per mm off centre. 10mm of offset asks for 6 degrees,
+// which the heading P term turns into roughly 12 PWM of split between the wheels.
 constexpr float WALL_TRIM_KP = 0.6f;
+// Degrees of steering per mm/s of closing speed. Steering to correct a lateral
+// offset is a double integrator - angle in, position out - so proportional
+// control alone will always overshoot the centre and weave back. This term is
+// what damps that. Raise it if the robot still swings across the corridor,
+// lower it if the steering feels twitchy.
+constexpr float WALL_TRIM_KD = 0.08f;
 constexpr float MAX_WALL_TRIM = 20.0f;
 // ms between LiDAR samples; far slower than the drive control loop.
 constexpr unsigned long WALL_SAMPLE_INTERVAL = 60;
+
+//////// Front Wall ////////
+// A front reading below this (mm) is a wall the robot is driving at, rather
+// than a far wall several cells away.
+constexpr int FRONT_WALL_THRESHOLD = 160;
+// Closest the robot is ever allowed to get to a wall ahead, in mm. The front
+// guard decelerates into this and refuses to drive past it, whatever distance
+// the caller asked for.
+constexpr float FRONT_STOP_DISTANCE = 55.0f;
 
 //////// PWM Limits ////////
 constexpr int MAX_PWM = 255;
