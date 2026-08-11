@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <String.h>
+#include <string.h>
 
 #include "Micromouse.hpp"
 #include "task3_code/task3Tracking.hpp"
