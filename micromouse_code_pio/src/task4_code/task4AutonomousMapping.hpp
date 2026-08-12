@@ -11,6 +11,14 @@ constexpr int MAPPING_TURN_PWM = 70;
 constexpr int MAPPING_DRIVE_PWM = 130;
 constexpr int SETTLE_TIME = 100;
 
+// For handling multiple types of errors & whether or not movement is successful
+enum MoveResult : uint8_t {
+    MOVE_SUCCESS,
+    MOVE_BLOCKED,
+    MOVE_SENSOR_ERROR,
+    MOVE_DISTANCE_ERROR
+};
+
 // Returns the absolute heading (e.g north) of turning right from the current heading
 inline Direction rightDirection(Direction currDirection) {
     if (currDirection == NORTH) {
@@ -69,10 +77,22 @@ inline void updateWallStatus(MazeMap& maze, Pose& pose, Direction direction, int
     }
 }
 
+// Takes in multiple median lidar readings to ensure correct readings only
+inline int getCorrectMedianDistance(Micromouse& mouse, LidarArray::Id sensor) {
+    uint8_t maxAttempts = 3;
+    for (uint8_t attemptNum = 0; attemptNum < maxAttempts; attemptNum++) {
+        int measuredDistReading = mouse.getMedianDistance(sensor);
+        if (measuredDistReading != LidarArray::NO_READING) {
+            return measuredDistReading;
+        }
+    }
+    return LidarArray::NO_READING;
+}
+
 inline bool senseCurrentCell(Micromouse& mouse, MazeMap& maze, Pose& pose) {
-    int frontLidarDistance = mouse.getMedianDistance(LidarArray::Front);
-    int leftLidarDistance = mouse.getMedianDistance(LidarArray::Left);
-    int rightLidarDistance = mouse.getMedianDistance(LidarArray::Right);
+    int frontLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Front);
+    int leftLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Left);
+    int rightLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Right);
 
     // If a lidar failed return false
     if (frontLidarDistance == LidarArray::NO_READING || leftLidarDistance == LidarArray::NO_READING || rightLidarDistance == LidarArray::NO_READING) {
@@ -168,46 +188,49 @@ inline void turnToDirection(Micromouse& mouse, Pose& pose, Direction targetDirec
 
 // Moves micromouse into neighbour cell in given direction if there's no wall. If there's a 
 // wall it returns false. Returns true if successfully moves into it
-inline bool moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, Direction& direction) {
+inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, Direction& direction) {
     int nextRow;
     int nextCol;
     // Updates nextRow/Col to be neighbour cell (in direction of "direction") of current pose and if can't reach it return false
     if (!maze.updateNeighbour(pose.row, pose.col, direction, nextRow, nextCol)) {
-        return false;
+        return MOVE_BLOCKED;
     }
 
     // Moves micromouse to the required input direction
     turnToDirection(mouse, pose, direction);
 
     // Measures to check if there's a wall in front
-    int frontLidarDist = mouse.getMedianDistance(LidarArray::Front);
+    int frontLidarDist = getCorrectMedianDistance(mouse, LidarArray::Front);
     if (frontLidarDist == LidarArray::NO_READING) {
-        return false;
+        return MOVE_SENSOR_ERROR;
     }
     updateWallStatus(maze, pose, pose.heading, frontLidarDist);
 
     // Returns false if there's a wall
     if (maze.getWallState(pose.row, pose.col, pose.heading) != NO_WALL) {
-        return false;
+        return MOVE_BLOCKED;
     }
 
     // Moves into the neighbour cell
     mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
     if (mouse.getCurrAvgDist() < 140.0f) {
         // Mouse got stopped before reaching the full 180
-        return false;
+        return MOVE_DISTANCE_ERROR;
     }
     updatePoseForward(pose);
 
     delay(SETTLE_TIME);
-    return true;
+    return MOVE_SUCCESS;
 }
 
 inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose) {
     while (true) {
-        if (!senseCurrentCell(mouse, maze, pose)) {
-            // Lidar error 
-            return false;
+        if (!maze.hasBeenVisited(pose.row, pose.col)) {
+            // Senses current cell if it hasn't been visited already
+            if (!senseCurrentCell(mouse, maze, pose)) {
+                // Lidar error 
+                return false;
+            }
         }
 
         drawMazeOled(mouse, maze, pose);
@@ -229,8 +252,12 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
             return false;
         }
 
-        if (!moveToNeighbour(mouse, maze, pose, nextDirection)) {
+        MoveResult resultFromMovingForward = moveToNeighbour(mouse, maze, pose, nextDirection);
+        if (resultFromMovingForward == MOVE_SUCCESS || resultFromMovingForward == MOVE_BLOCKED) {
             continue;
+        } else {
+            // sensor or movement error
+            return false;
         }
     }
 }
@@ -251,16 +278,23 @@ inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlann
         if (!planner.getBestDirectionToMove(maze, pose, directionToTurnTo)) {
             return false;
         }
-        if (!moveToNeighbour(mouse, maze, pose, directionToTurnTo)) {
+
+        MoveResult resultFromForwardMovement = moveToNeighbour(mouse, maze, pose, directionToTurnTo);
+        if (resultFromForwardMovement == MOVE_BLOCKED) {
+            // New wall, replan
             continue;
+        }
+        if (resultFromForwardMovement != MOVE_SUCCESS) {
+            // error during movement
+            return false;
         }
         drawMazeOled(mouse, maze, pose);
     }
     return true;
 }
 
-inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, Pose& startPose, int targetRow, int targetCol) {
-    if (!maze.inMaze(targetRow, targetCol) || !maze.inMaze(startPose.row, startPose.col)) {
+inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, Pose startPose, int targetRow, int targetCol) {
+    if (!maze.inMaze(targetRow, targetCol) || !maze.inMaze(startPose.row, startPose.col) || !maze.inMaze(pose.row, pose.col)) {
         // Either the goal or start aren't in the maze
         return false;
     }

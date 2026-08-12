@@ -92,6 +92,14 @@ class MazeMap {
             if (!inMaze(row, col)) {
                 return WALL;
             }
+
+            int neighbourRow;
+            int neighbourCol;
+            if (!updateNeighbour(row, col, direction, neighbourRow, neighbourCol)) {
+                // Checks if the cell facing the current direction is unreachable, meaning should be a wall
+                return WALL;
+            }
+
             return edges[row][col][direction];
         }
 
