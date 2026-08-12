@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include "Micromouse.hpp"
 #include "task4_code/MazeMap.hpp"
+#include "task4_code/MazeAutonomousPlanner.hpp"
+#include "task4_code/DisplayMazeOled.hpp"
 
 constexpr uint8_t WALL_DISTANCE_THRESHOLD = 90;
 constexpr int MAPPING_TURN_PWM = 70;
@@ -67,12 +69,15 @@ inline void updateWallStatus(MazeMap& maze, Pose& pose, Direction direction, int
     }
 }
 
-inline void senseCurrentCell(Micromouse& mouse, MazeMap& maze, Pose& pose) {
-    maze.setAsVisited(pose.row, pose.col);
-
+inline bool senseCurrentCell(Micromouse& mouse, MazeMap& maze, Pose& pose) {
     int frontLidarDistance = mouse.getMedianDistance(LidarArray::Front);
     int leftLidarDistance = mouse.getMedianDistance(LidarArray::Left);
     int rightLidarDistance = mouse.getMedianDistance(LidarArray::Right);
+
+    // If a lidar failed return false
+    if (frontLidarDistance == LidarArray::NO_READING || leftLidarDistance == LidarArray::NO_READING || rightLidarDistance == LidarArray::NO_READING) {
+        return false;
+    }
 
     Direction frontDir = pose.heading;
     Direction rightDir = rightDirection(pose.heading);
@@ -82,6 +87,9 @@ inline void senseCurrentCell(Micromouse& mouse, MazeMap& maze, Pose& pose) {
     updateWallStatus(maze, pose, rightDir, rightLidarDistance);
     updateWallStatus(maze, pose, leftDir, leftLidarDistance);
 
+    maze.setAsVisited(pose.row, pose.col);
+
+    return true;
 
     // if (frontLidarDistance >= 0) {
     //     WallState wallStatus = WALL;
@@ -173,6 +181,9 @@ inline bool moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, Direct
 
     // Measures to check if there's a wall in front
     int frontLidarDist = mouse.getMedianDistance(LidarArray::Front);
+    if (frontLidarDist == LidarArray::NO_READING) {
+        return false;
+    }
     updateWallStatus(maze, pose, pose.heading, frontLidarDist);
 
     // Returns false if there's a wall
@@ -182,8 +193,96 @@ inline bool moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, Direct
 
     // Moves into the neighbour cell
     mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+    if (mouse.getCurrAvgDist() < 140.0f) {
+        // Mouse got stopped before reaching the full 180
+        return false;
+    }
     updatePoseForward(pose);
 
     delay(SETTLE_TIME);
+    return true;
+}
+
+inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose) {
+    while (true) {
+        if (!senseCurrentCell(mouse, maze, pose)) {
+            // Lidar error 
+            return false;
+        }
+
+        drawMazeOled(mouse, maze, pose);
+
+        if (!planner.floodFillToNearestUnvisited(maze)) {
+            // Every cell has been visited
+            return true;
+        }
+
+        // Gets distance of micromouse to closest unvisited cell
+        uint8_t currDist = planner.getDistance(pose.row, pose.col);
+        if (currDist == INFINITE) {
+            return false;
+        }
+
+        Direction nextDirection;
+
+        if (!planner.getBestDirectionToMove(maze, pose, nextDirection)) {
+            return false;
+        }
+
+        if (!moveToNeighbour(mouse, maze, pose, nextDirection)) {
+            continue;
+        }
+    }
+}
+
+inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, int targetRow, int targetCol) {
+    if (!maze.inMaze(targetRow, targetCol)) {
+        return false;
+    }
+    while (pose.row != targetRow || pose.col != targetCol) {
+        if (!planner.floodFill(maze, targetRow, targetCol)) {
+            return false;
+        }
+        if (planner.getDistance(pose.row, pose.col) == INFINITE) {
+            // Can't reach target
+            return false;
+        }
+        Direction directionToTurnTo;
+        if (!planner.getBestDirectionToMove(maze, pose, directionToTurnTo)) {
+            return false;
+        }
+        if (!moveToNeighbour(mouse, maze, pose, directionToTurnTo)) {
+            continue;
+        }
+        drawMazeOled(mouse, maze, pose);
+    }
+    return true;
+}
+
+inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, Pose& startPose, int targetRow, int targetCol) {
+    if (!maze.inMaze(targetRow, targetCol) || !maze.inMaze(startPose.row, startPose.col)) {
+        // Either the goal or start aren't in the maze
+        return false;
+    }
+    ////// AUTONOMOUS MAPPING
+    if (!mapEntireMaze(mouse, maze, planner, pose)) {
+        return false;
+    }
+
+    ////// RETURN TO START
+    if (!navigateToCell(mouse, maze, planner, pose, startPose.row, startPose.col)) {
+        return false;
+    }
+    // Turn to original heading
+    turnToDirection(mouse, pose, startPose.heading);
+    drawMazeOled(mouse, maze, pose);
+
+    delay(500);
+
+    ////// Shortest path run
+    if (!navigateToCell(mouse, maze, planner, pose, targetRow, targetCol)) {
+        return false;
+    }
+    drawMazeOled(mouse, maze, pose);
     return true;
 }

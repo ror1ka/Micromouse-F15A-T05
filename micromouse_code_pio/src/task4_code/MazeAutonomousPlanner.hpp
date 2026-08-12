@@ -136,6 +136,70 @@ class MazeAutonomousPlanner {
             return foundDirection;
         }
 
+        // Flood fills from all unvisited cells to find the closest one. Returns false if all 
+        // cells have been visited. If a cell is unreachable I think it'll still return true tho
+        // the distance array for the robot's current cell will be infinite
+        bool floodFillToNearestUnvisited(MazeMap& maze) {
+            for (uint8_t i = 0; i < NUM_CELLS; i++) {
+                distance[i] = INFINITE;
+            }
+
+            // This is for replacing a memory intensive queue with an array
+            uint8_t head = 0;
+            uint8_t tail = 0;
+
+            // Looks for all unvisited cells
+            for (uint8_t row = 0; row < MAZE_HEIGHT; row++) {
+                for (uint8_t col = 0; col < MAZE_WIDTH; col++) {
+                    if (!maze.inMaze(row, col) || maze.hasBeenVisited(row, col)) {
+                        continue;
+                    }
+                    uint8_t currCellIndex = row * MAZE_WIDTH + col;
+                    distance[currCellIndex] = 0;
+                    queue[tail] = currCellIndex;
+                    tail++;
+                }
+            }
+
+            // No unvisited cells are in the maze
+            if (tail == 0) {
+                return false;
+            }
+
+            // Flood fills from all of the unvisited cells at the same time
+            while (head < tail) {
+                uint8_t currIndex = queue[head];
+                head++;
+
+                // Get curr row & col from the current index taken out of queue
+                int row = currIndex / MAZE_WIDTH;
+                int col = currIndex % MAZE_WIDTH;
+
+                // Searches through each direction (e.g north) of curr cell
+                for (uint8_t currDir = 0; currDir < 4; currDir++) {
+                    Direction currDirection = static_cast<Direction>(currDir);
+                    int neighbourRow;
+                    int neighbourCol;
+                    // Gets the neighbourRow/Col in currDirection and continues if not reachable
+                    if (!maze.updateNeighbour(row, col, currDirection, neighbourRow, neighbourCol)) {
+                        continue;
+                    }
+                    WallState currWall = maze.getWallState(row, col, currDirection);
+                    if (currWall == WALL) {
+                        continue;
+                    }
+
+                    uint8_t neighbourIndex = neighbourRow * MAZE_WIDTH + neighbourCol;
+                    if (distance[neighbourIndex] == INFINITE) {
+                        distance[neighbourIndex] = distance[currIndex] + 1;
+                        queue[tail] = neighbourIndex;
+                        tail++;
+                    }
+                }
+            }
+            return true;
+        }
+
     private:
         uint8_t distance[NUM_CELLS];
         uint8_t queue[NUM_CELLS];
