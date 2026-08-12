@@ -127,6 +127,23 @@ class MazeMap {
             return static_cast<uint8_t>((100 * numVisited)/NUM_REACHABLE_CELLS);
         } 
 
+        // Returns if the neighbour in the current direction of the micromouse is a valid cell and 
+        // updates the input neighbourRow/Col to be this neighbour cell
+        bool updateNeighbour(int row, int col, Direction direction, int& neighbourRow, int& neighbourCol) {
+            neighbourRow = row;
+            neighbourCol = col;
+            if (direction == NORTH) {
+                neighbourRow--;
+            } else if (direction == EAST) {
+                neighbourCol++;
+            } else if (direction == SOUTH) {
+                neighbourRow++;
+            } else if (direction == WEST) {
+                neighbourCol--;
+            }
+            return inMaze(neighbourRow, neighbourCol);
+        }
+
     private:
         // Stores if a certain cell has already been visited
         bool visited[MAZE_HEIGHT][MAZE_WIDTH];
