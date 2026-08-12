@@ -38,6 +38,8 @@ public:
     // Returned by read()/latest() when there is no trustworthy measurement -
     // no target in range, the sensor errored, or nothing has arrived yet.
     static constexpr int NO_READING = -1;
+    // Returned by readResult() when out of range
+    static constexpr int NO_TARGET = -2;
 
     // The names are set here rather than in the initialiser below because F()
     // expands to a statement-expression, which is only legal inside a function.
@@ -181,25 +183,31 @@ public:
     int getMedianDistance(Id id) {
         int readings[MEDIAN_SAMPLES];
         int validReadings = 0;
+        int numTargetOutsideRangeReadings = 0;
 
         for (int i = 0; i < MEDIAN_SAMPLES; i++) {
             int distance = read(id);
-            if (distance >= 0) {
+            if (distance == NO_TARGET) {
+                // Target not in range
+                numTargetOutsideRangeReadings++;
+            } else if (distance >= 0) {
                 readings[validReadings] = distance;
                 validReadings++;
             }
             delay(5);
         }
 
-        if (validReadings == 0) {
+        int numTotalValidReadings = validReadings + numTargetOutsideRangeReadings;
+
+        if (numTotalValidReadings == 0) {
             return NO_READING;
         }
 
-        if (validReadings < 3) {
-            // Not enough valid measurements to find a median, so just use the
-            // last good reading.
-            return readings[validReadings - 1];
-        }
+        // if (validReadings < 3) {
+        //     // Not enough valid measurements to find a median, so just use the
+        //     // last good reading.
+        //     return readings[validReadings - 1];
+        // }
 
         // Sorts the readings into ascending order
         for (int i = 0; i < validReadings; i++) {
@@ -212,7 +220,11 @@ public:
             }
         }
 
-        return readings[validReadings / 2];
+        int medianIndex = numTotalValidReadings / 2;
+        if (medianIndex >= validReadings) {
+            return NO_TARGET;
+        }
+        return readings[medianIndex];
     }
 
     void print() {
@@ -317,6 +329,15 @@ private:
         const uint8_t rangeStatus = channel.device.readRangeStatus();
         const uint8_t raw = channel.device.readReg(VL6180X::RESULT__RANGE_VAL);
         channel.device.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01);
+
+        // When target too far to be properly read
+        if (rangeStatus == VL6180X_ERROR_ECEFAIL ||
+            rangeStatus == VL6180X_ERROR_NOCONVERGE ||
+            rangeStatus == VL6180X_ERROR_RANGEIGNORE ||
+            rangeStatus == VL6180X_ERROR_RAWOFLOW ||
+            rangeStatus == VL6180X_ERROR_RANGEOFLOW) {
+            return NO_TARGET;
+        }
 
         if (rangeStatus != VL6180X_ERROR_NONE) {
             return NO_READING;

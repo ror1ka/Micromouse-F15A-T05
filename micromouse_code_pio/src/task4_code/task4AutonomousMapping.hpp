@@ -49,6 +49,21 @@ inline Direction oppositeDirection(Direction currDirection) {
     return NORTH;
 }
 
+// Helper function for senseCurrentCell() to set wall state for current pose
+inline void updateWallStatus(MazeMap& maze, Pose& pose, Direction direction, int distance) {
+    if (distance == LidarArray::NO_TARGET) {
+        // Target outside range --> no wall
+        maze.setWallState(pose.row, pose.col, direction, NO_WALL);
+    } else if (distance >= 0) {
+        WallState wallStatus = WALL;
+        if (distance > WALL_DISTANCE_THRESHOLD) {
+            wallStatus = NO_WALL;
+        }
+        // pose.heading = wallStatus;
+        maze.setWallState(pose.row, pose.col, direction, wallStatus);
+    }
+}
+
 inline void senseCurrentCell(Micromouse& mouse, MazeMap& maze, Pose& pose) {
     maze.setAsVisited(pose.row, pose.col);
 
@@ -60,32 +75,37 @@ inline void senseCurrentCell(Micromouse& mouse, MazeMap& maze, Pose& pose) {
     Direction rightDir = rightDirection(pose.heading);
     Direction leftDir = leftDirection(pose.heading);
 
-    if (frontLidarDistance >= 0) {
-        WallState wallStatus = WALL;
-        if (frontLidarDistance > WALL_DISTANCE_THRESHOLD) {
-            wallStatus = NO_WALL;
-        }
-        // pose.heading = wallStatus;
-        maze.setWallState(pose.row, pose.col, frontDir, wallStatus);
-    }
+    updateWallStatus(maze, pose, frontDir, frontLidarDistance);
+    updateWallStatus(maze, pose, rightDir, rightLidarDistance);
+    updateWallStatus(maze, pose, leftDir, leftLidarDistance);
 
-    if (rightLidarDistance >= 0) {
-        WallState wallStatus = WALL;
-        if (rightLidarDistance > WALL_DISTANCE_THRESHOLD) {
-            wallStatus = NO_WALL;
-        }
-        // pose.heading = wallStatus;
-        maze.setWallState(pose.row, pose.col, rightDir, wallStatus);
-    }
 
-    if (leftLidarDistance >= 0) {
-        WallState wallStatus = WALL;
-        if (leftLidarDistance > WALL_DISTANCE_THRESHOLD) {
-            wallStatus = NO_WALL;
-        }
-        // pose.heading = wallStatus;
-        maze.setWallState(pose.row, pose.col, leftDir, wallStatus);
-    }
+    // if (frontLidarDistance >= 0) {
+    //     WallState wallStatus = WALL;
+    //     if (frontLidarDistance > WALL_DISTANCE_THRESHOLD) {
+    //         wallStatus = NO_WALL;
+    //     }
+    //     // pose.heading = wallStatus;
+    //     maze.setWallState(pose.row, pose.col, frontDir, wallStatus);
+    // }
+
+    // if (rightLidarDistance >= 0) {
+    //     WallState wallStatus = WALL;
+    //     if (rightLidarDistance > WALL_DISTANCE_THRESHOLD) {
+    //         wallStatus = NO_WALL;
+    //     }
+    //     // pose.heading = wallStatus;
+    //     maze.setWallState(pose.row, pose.col, rightDir, wallStatus);
+    // }
+
+    // if (leftLidarDistance >= 0) {
+    //     WallState wallStatus = WALL;
+    //     if (leftLidarDistance > WALL_DISTANCE_THRESHOLD) {
+    //         wallStatus = NO_WALL;
+    //     }
+    //     // pose.heading = wallStatus;
+    //     maze.setWallState(pose.row, pose.col, leftDir, wallStatus);
+    // }
 }
 
 // Moves forward from current position and updates position row/col
