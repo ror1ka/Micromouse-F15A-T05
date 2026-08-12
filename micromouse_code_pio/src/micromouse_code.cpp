@@ -7,6 +7,7 @@
 #include "task3_code/task3ChainingMovements.hpp"
 #include "task3_code/task3DrivingAndStopping.hpp"
 #include "task3_code/task3Turning.hpp"
+#include "task4_code/DisplayMazeOled.hpp"
 
 constexpr unsigned long BAUD = 115200;
 
@@ -47,6 +48,39 @@ void loop() {
   //   runSelfTest(mouse);
   //   while (true) {}
   // }
+
+  ////////////// TESTING OLED
+  MazeMap maze;
+
+  // Pretend the robot is currently at row 4, column 4, facing north
+  Pose pose = {4, 4, NORTH};
+
+  // Pretend these four cells have already been visited
+  maze.setAsVisited(4, 4);
+  maze.setAsVisited(4, 5);
+  maze.setAsVisited(5, 4);
+  maze.setAsVisited(5, 5);
+
+  // Add some fake walls so we can check all four wall directions
+  maze.setWallState(4, 4, NORTH, WALL);
+  maze.setWallState(4, 4, WEST, WALL);
+  maze.setWallState(4, 4, EAST, WALL);
+  maze.setWallState(4, 4, SOUTH, NO_WALL);
+  
+  maze.setWallState(4, 5, NORTH, WALL);
+  maze.setWallState(4, 5, EAST, WALL);
+
+  maze.setWallState(5, 4, WEST, WALL);
+  maze.setWallState(5, 4, SOUTH, WALL);
+
+  maze.setWallState(5, 5, EAST, WALL);
+  maze.setWallState(5, 5, SOUTH, WALL);
+
+  drawMazeOled(mouse, maze, pose);
+  while (true) {
+
+  }
+  /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
   chainMovement(mouse, "lfrffffffrflf");

@@ -5,6 +5,8 @@
 constexpr uint8_t MAZE_WIDTH = 9;
 constexpr uint8_t MAZE_HEIGHT = 9;
 constexpr uint8_t NUM_CELLS = MAZE_HEIGHT * MAZE_WIDTH;
+// Number of cells excluding the corners
+constexpr uint8_t NUM_REACHABLE_CELLS = NUM_CELLS - (3 * 4);
 constexpr uint8_t NUM_DIRECTIONS = 4;
 
 // constexpr uint8_t NORTH = 1 << 0;
@@ -41,10 +43,25 @@ class MazeMap {
         }
 
         bool inMaze(int row, int col) {
-            if (row < MAZE_HEIGHT && row >= 0 && col < MAZE_WIDTH && col >= 0) {
-                return true;
+            if (row >= MAZE_HEIGHT || row < 0 || col >= MAZE_WIDTH || col < 0) {
+                return false;
             }
-            return false;
+            // Returns false if in one of the corners
+            if ((row == 0 && col == 0) || 
+                (row == 0 && col == 1) || 
+                (row == 1 && col == 0) ||
+                (row == 0 && col == 8) ||
+                (row == 0 && col == 7) ||
+                (row == 1 && col == 8) || 
+                (col == 8 && row == 8) || 
+                (col == 8 && row == 7) || 
+                (col == 7 && row == 8) ||
+                (col == 0 && row == 8) ||
+                (col == 0 && row == 7) ||
+                (col == 1 && row == 8)) {
+                return false;
+            }
+            return true;
         }
 
         bool hasBeenVisited(int row, int col) {
@@ -105,6 +122,10 @@ class MazeMap {
                 edges[sharedWallCellRow][sharedWallCellCol][oppositeDirection] = wallState;
             }
         }
+
+        uint8_t getCompletionPercent() {
+            return static_cast<uint8_t>((100 * numVisited)/NUM_REACHABLE_CELLS);
+        } 
 
     private:
         // Stores if a certain cell has already been visited
