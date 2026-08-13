@@ -74,6 +74,9 @@ public:
     motion.driveDistanceCruiseLidar(targetDistance, cruisePWM);
   }
 
+  void driveDistanceCruiseNoLidar(float targetDistance, int cruisePWM) {
+    motion.driveDistanceCruiseNoLidar(targetDistance, cruisePWM);
+  }
 
   //////// Sensors ////////
   // Blocking reads. Fine between moves, too slow inside a control loop.
