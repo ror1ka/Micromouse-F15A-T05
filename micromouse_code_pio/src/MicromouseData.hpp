@@ -59,7 +59,7 @@ constexpr float DIST_OFFSET = 1.0f;  // mm shaved off every travelDistance targe
 
 //////// Wall Following ////////
 // A side reading below this (mm) counts as a wall rather than open maze.
-constexpr int WALL_THRESHOLD = 140;
+constexpr int WALL_THRESHOLD = 110;
 // Target side clearance (mm), measured as (54 + 42) / 2.
 constexpr float WALL_SETPOINT = 48.0f;
 // Measured left-right difference of 12mm, but that is only valid if the robot

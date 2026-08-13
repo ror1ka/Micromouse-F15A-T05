@@ -7,7 +7,7 @@
 
 inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
     ///// TEST
-    digitalWrite(LED_BUILTIN, HIGH);
+    // digitalWrite(LED_BUILTIN, HIGH);
     /////
     // mouse.setupOled();
     auto& oledDisplay = mouse.oled().getDisplay();
@@ -23,7 +23,7 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
 
     while (true) {
         ///// TEST
-        oledDisplay.drawBox(115, 0, 10, 10);
+        // oledDisplay.drawBox(115, 0, 10, 10);
         /////
         for (int row = 0; row < MAZE_HEIGHT; row++) {
             for (int col = 0; col < MAZE_WIDTH; col++) {
@@ -79,6 +79,6 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
         }
     }
     ///// TEST
-    delay(200);
-    digitalWrite(LED_BUILTIN, LOW);
+    // delay(200);
+    // digitalWrite(LED_BUILTIN, LOW);
 }

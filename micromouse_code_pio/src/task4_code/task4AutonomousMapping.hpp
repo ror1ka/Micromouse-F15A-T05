@@ -218,33 +218,6 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
         return MOVE_BLOCKED;
     }
 
-    /////////////
-    // For MOVEMENT, use the same conservative threshold
-    // as driveDistanceCruiseLidar().
-    // if (frontLidarDist != LidarArray::NO_TARGET &&
-    //     frontLidarDist >= 0 &&
-    //     frontLidarDist <= FRONT_WALL_THRESHOLD) {
-
-    //     maze.setWallState(
-    //         pose.row,
-    //         pose.col,
-    //         pose.heading,
-    //         WALL
-    //     );
-
-    //     return MOVE_BLOCKED;
-    // }
-
-    // // Safe to move this direction.
-    // maze.setWallState(
-    //     pose.row,
-    //     pose.col,
-    //     pose.heading,
-    //     NO_WALL
-    // );
-    ////////////
-
-
     // Moves into the neighbour cell
     mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
     // if (mouse.getCurrAvgDist() < 140.0f) {
@@ -263,7 +236,9 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
             // Senses current cell if it hasn't been visited already
             if (!senseCurrentCell(mouse, maze, pose)) {
                 // Lidar error 
-                return false;
+                delay(SETTLE_TIME);
+                continue;
+                // return false;
             }
         }
 
@@ -292,7 +267,7 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
         MoveResult resultFromMovingForward = moveToNeighbour(mouse, maze, pose, nextDirection);
         reportStack(F("after move"));
 
-        if (resultFromMovingForward == MOVE_SUCCESS || resultFromMovingForward == MOVE_BLOCKED) {
+        if (resultFromMovingForward == MOVE_SUCCESS || resultFromMovingForward == MOVE_BLOCKED || resultFromMovingForward == MOVE_SENSOR_ERROR) {
             continue;
         } else {
             // sensor or movement error
@@ -319,7 +294,7 @@ inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlann
         }
 
         MoveResult resultFromForwardMovement = moveToNeighbour(mouse, maze, pose, directionToTurnTo);
-        if (resultFromForwardMovement == MOVE_BLOCKED) {
+        if (resultFromForwardMovement == MOVE_BLOCKED || resultFromForwardMovement == MOVE_SENSOR_ERROR) {
             // New wall, replan
             continue;
         }
