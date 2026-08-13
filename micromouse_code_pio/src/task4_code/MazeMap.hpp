@@ -24,21 +24,26 @@ struct Pose {
 };
 
 // Store as grid, store whether a certain
+//
+// The wall and visited grids are bit-packed rather than one byte per entry.
+// This is a 2KB ATmega328P: the obvious version - WallState edges[9][9][4] plus
+// bool visited[9][9] - costs 405 bytes of the 2048, and with the rest of the
+// robot's globals that leaves under 300 bytes of stack. The drive loops nested
+// under an OLED redraw need more than that, and the stack grows down straight
+// into the u8g2 object at the top of `mouse`, which kills the display for good.
+// Packed, the same maze costs 92 bytes.
+//
+//   walls[cell]  four 2-bit WallStates, direction d in bits (2*d) and (2*d)+1
+//   visited[]    one bit per cell
 class MazeMap {
     public:
         MazeMap() {
-            for (int row = 0; row < MAZE_HEIGHT; row++) {
-                for (int col = 0; col < MAZE_WIDTH; col++) {
-                    visited[row][col] = false;
-                    
-                    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
-                        edges[row][col][direction] = UNKNOWN;
-                    }
-
-                    // visited[col + row * MAZE_WIDTH] = false;
-                    // walls[col][row] = 0;
-                    // known[col][row] = 0;
-                }
+            for (uint8_t i = 0; i < NUM_CELLS; i++) {
+                // All four directions UNKNOWN, which is 0.
+                walls[i] = 0;
+            }
+            for (uint8_t i = 0; i < VISITED_BYTES; i++) {
+                visited[i] = 0;
             }
         }
 
@@ -68,10 +73,8 @@ class MazeMap {
             if (!inMaze(row, col)) {
                 return false;
             }
-            if (visited[row][col]) {
-                return true;
-            }
-            return false;
+            uint8_t cellIndex = cellIndexOf(row, col);
+            return (visited[cellIndex / 8] & (1 << (cellIndex % 8))) != 0;
         }
 
         void setAsVisited(int row, int col) {
@@ -80,7 +83,8 @@ class MazeMap {
             }
             if (!hasBeenVisited(row, col)) {
                 numVisited++;
-                visited[row][col] = true;
+                uint8_t cellIndex = cellIndexOf(row, col);
+                visited[cellIndex / 8] |= (1 << (cellIndex % 8));
             }
         }
 
@@ -100,14 +104,14 @@ class MazeMap {
                 return WALL;
             }
 
-            return edges[row][col][direction];
+            return readWall(row, col, direction);
         }
 
         void setWallState(int row, int col, Direction direction, WallState wallState) {
             if (!inMaze(row, col)) {
                 return;
             }
-            edges[row][col][direction] = wallState;
+            writeWall(row, col, direction, wallState);
             // Update cell which also has the same wall to update the wall state
             int sharedWallCellRow = row;
             int sharedWallCellCol = col;
@@ -127,7 +131,7 @@ class MazeMap {
             }
             
             if (inMaze(sharedWallCellRow, sharedWallCellCol)) {
-                edges[sharedWallCellRow][sharedWallCellCol][oppositeDirection] = wallState;
+                writeWall(sharedWallCellRow, sharedWallCellCol, oppositeDirection, wallState);
             }
         }
 
@@ -153,14 +157,31 @@ class MazeMap {
         }
 
     private:
-        // Stores if a certain cell has already been visited
-        bool visited[MAZE_HEIGHT][MAZE_WIDTH];
-        // Stores whether or not there is a wall from the current cell in the given direction
-        WallState edges[MAZE_HEIGHT][MAZE_WIDTH][NUM_DIRECTIONS];
-        int numVisited = 0;
+        static constexpr uint8_t VISITED_BYTES = (NUM_CELLS + 7) / 8;
+        // Two bits per direction, so a WallState occupies bits (2*d) and (2*d)+1.
+        static constexpr uint8_t WALL_MASK = 0x03;
 
-        // bool visited[NUM_CELLS];
-        // int walls[MAZE_HEIGHT][MAZE_WIDTH];
-        // int known[MAZE_HEIGHT][MAZE_WIDTH];
-        // int numVisited = 0;
+        // Callers have already been through inMaze() by the time these run.
+        static uint8_t cellIndexOf(int row, int col) {
+            return (uint8_t)(row * MAZE_WIDTH + col);
+        }
+
+        WallState readWall(int row, int col, Direction direction) {
+            uint8_t shift = 2 * (uint8_t)direction;
+            return (WallState)((walls[cellIndexOf(row, col)] >> shift) & WALL_MASK);
+        }
+
+        void writeWall(int row, int col, Direction direction, WallState wallState) {
+            uint8_t cellIndex = cellIndexOf(row, col);
+            uint8_t shift = 2 * (uint8_t)direction;
+            walls[cellIndex] &= ~(WALL_MASK << shift);
+            walls[cellIndex] |= ((uint8_t)wallState & WALL_MASK) << shift;
+        }
+
+        // Stores if a certain cell has already been visited, one bit per cell
+        uint8_t visited[VISITED_BYTES];
+        // Stores whether or not there is a wall from the current cell in the given
+        // direction, two bits per direction
+        uint8_t walls[NUM_CELLS];
+        uint8_t numVisited = 0;
 };

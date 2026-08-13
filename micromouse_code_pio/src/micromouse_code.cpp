@@ -15,9 +15,11 @@
 
 constexpr unsigned long BAUD = 115200;
 
-// Used by travelDistance only; the PID routines carry their own gains.
-PIDController posPID(2.0, 1.0, 2.0);
-Micromouse mouse(posPID);
+// Used by travelDistance only; the PID routines carry their own gains. Passed as
+// a temporary rather than kept as a global - Micromouse takes it by value and
+// Movement keeps the only copy that is ever used, so a global here would be 64
+// bytes of RAM that nothing reads.
+Micromouse mouse(PIDController(2.0, 1.0, 2.0));
 
 // TASK 4.3 STUFF
 MazeMap maze;
