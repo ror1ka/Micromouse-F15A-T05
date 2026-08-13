@@ -246,10 +246,10 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
 
     // Moves into the neighbour cell
     mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
-    if (mouse.getCurrAvgDist() < 140.0f) {
-        // Mouse got stopped before reaching the full 180
-        return MOVE_DISTANCE_ERROR;
-    }
+    // if (mouse.getCurrAvgDist() < 140.0f) {
+    //     // Mouse got stopped before reaching the full 180
+    //     return MOVE_DISTANCE_ERROR;
+    // }
     updatePoseForward(pose);
 
     delay(SETTLE_TIME);
