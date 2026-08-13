@@ -26,9 +26,9 @@ MazeMap maze;
 MazeAutonomousPlanner planner;
 
 Pose startPose = {
+    4,
     7,
-    1,
-    NORTH
+    EAST
 };
 
 // Current estimated robot pose.
@@ -105,30 +105,30 @@ void loop() {
   // maze.setWallState(5, 5, EAST, WALL);
   // maze.setWallState(5, 5, SOUTH, WALL);
 
-  // drawMazeOled(mouse, maze, pose);
+  //drawMazeOled(mouse, maze, pose);
 
   ///// TESTING 43
-  // Never run Task 4.3 more than once.
-  // if (task43HasRun) {
-  //     return;
-  // }
+ // Never run Task 4.3 more than once.
+  if (task43HasRun) {
+      return;
+  }
 
-  // task43HasRun = true;
-  // bool success = runTask4_3(
-  //     mouse,
-  //     maze,
-  //     planner,
-  //     pose,
-  //     startPose,
-  //     4,
-  //     5
-  // );
+  task43HasRun = true;
+  bool success = runTask4_3(
+      mouse,
+      maze,
+      planner,
+      pose,
+      startPose,
+      2,
+      5
+  );
   
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
   // chainMovement(mouse, "lfrffffffrflf");
- chainMission(mouse, MISSION, NUM_COMMANDS);
+ //chainMission(mouse, MISSION, NUM_COMMANDS);
   // mouse.printLidar();
 
   // Other task 3 routines, for when you want to test one on its own:
