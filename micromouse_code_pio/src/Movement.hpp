@@ -674,7 +674,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        const float baseHeading = mouse.getRotCust();
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
