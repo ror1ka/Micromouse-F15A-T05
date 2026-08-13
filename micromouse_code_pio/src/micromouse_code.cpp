@@ -10,6 +10,7 @@
 #include "task4_code/DisplayMazeOled.hpp"
 #include"task4_code/task4_2ChainingMovements.hpp"
 #include "task4_code/maze_route.h"
+#include "task4_code/task4AutonomousMapping.hpp"
 
 constexpr unsigned long BAUD = 115200;
 
