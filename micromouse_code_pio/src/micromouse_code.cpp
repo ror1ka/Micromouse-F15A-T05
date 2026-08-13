@@ -24,7 +24,7 @@ MazeMap maze;
 MazeAutonomousPlanner planner;
 
 Pose startPose = {
-    4,
+    8,
     4,
     NORTH
 };
@@ -50,6 +50,9 @@ void setup() {
   mouse.setupIMU();
   mouse.setupLidar();
   mouse.initialiseGlobalHeading();
+
+  ///// OLED FIX TEST
+  pinMode(LED_BUILTIN, OUTPUT);
 
   delay(1000);
 }

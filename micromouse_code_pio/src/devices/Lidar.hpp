@@ -406,7 +406,9 @@ private:
 
         // It comes back up at the default address, so point the object there
         // before trying to talk to it again.
-        channel.device.setAddress(DEFAULT_ADDRESS);
+        // channel.device.setAddress(DEFAULT_ADDRESS);
+        // CHANGED ABOVE LINE TO:
+        channel.device = VL6180X();
         configure(channel);
     }
 };

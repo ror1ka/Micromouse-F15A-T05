@@ -6,7 +6,13 @@
 #include "task4_code/MazeMap.hpp"
 
 inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
+    ///// TEST
+    digitalWrite(LED_BUILTIN, HIGH);
+    /////
+    // mouse.setupOled();
     auto& oledDisplay = mouse.oled().getDisplay();
+
+    // oledDisplay.setDrawColor(1); //// ADDED FOR TEST
 
     int cellPixelWidth = 6;
     int offsetFromCornerX = 1;
@@ -16,6 +22,9 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
     oledDisplay.firstPage();
 
     while (true) {
+        ///// TEST
+        oledDisplay.drawBox(115, 0, 10, 10);
+        /////
         for (int row = 0; row < MAZE_HEIGHT; row++) {
             for (int col = 0; col < MAZE_WIDTH; col++) {
                 if (!maze.inMaze(row, col)) {
@@ -69,4 +78,7 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
             break;
         }
     }
+    ///// TEST
+    delay(200);
+    digitalWrite(LED_BUILTIN, LOW);
 }
