@@ -17,6 +17,26 @@ constexpr unsigned long BAUD = 115200;
 PIDController posPID(2.0, 1.0, 2.0);
 Micromouse mouse(posPID);
 
+// TASK 4.3 STUFF
+MazeMap maze;
+MazeAutonomousPlanner planner;
+
+Pose startPose = {
+    START_ROW,
+    START_COL,
+    START_HEADING
+};
+
+// Current estimated robot pose.
+// At the beginning this is identical to the start pose.
+Pose pose = startPose;
+
+
+// Makes absolutely sure Task 4.3 only runs once.
+bool task43HasRun = false;
+// END 4.3
+
+
 void setup() {
   Serial.begin(BAUD);
   Wire.begin();
@@ -79,9 +99,33 @@ void loop() {
   // maze.setWallState(5, 5, SOUTH, WALL);
 
   // drawMazeOled(mouse, maze, pose);
-  // while (true) {
 
-  // }
+  ///// TESTING 43
+  // Never run Task 4.3 more than once.
+  if (task43HasRun) {
+      return;
+  }
+
+  task43HasRun = true;
+
+  Serial.println();
+  Serial.println(F("=============================="));
+  Serial.println(F("BEGINNING TASK 4.3"));
+  Serial.println(F("=============================="));
+
+
+  bool success = runTask4_3(
+      mouse,
+      maze,
+      planner,
+      pose,
+      startPose,
+      GOAL_ROW,
+      GOAL_COL
+  );
+  while (true) {
+
+  }
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
