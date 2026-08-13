@@ -674,7 +674,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = mouse.getRotCust();
+        const float baseHeading = getRot();
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
@@ -886,7 +886,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = mouse.getRotCust();
+        const float baseHeading = getRot();
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
@@ -1206,7 +1206,7 @@ private:
     static constexpr float MIN_HALF_SPAN = 25.0f;
     static constexpr float MAX_HALF_SPAN = 80.0f;
 
-    float getRot() { return imu.getAngleZ(); }
+    float getRot() { return imu.getAngleZCustom(); }
 
     // The trapezoid, shared by both profiled routines. Returns the largest
     // output allowed this tick: ramping up over the first `rampUp` of the move,
