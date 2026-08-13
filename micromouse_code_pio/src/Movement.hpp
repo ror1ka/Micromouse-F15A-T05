@@ -852,6 +852,189 @@ public:
         }
     }
 
+    // Cruise but no lidar
+    void driveDistanceCruiseNoLidar(float targetDistance, int cruisePWM) {
+        // The gains the other drive routines settled on. Not constructed with any
+        // state that matters yet - it is seeded at the handover, below.
+        PIDController distancePid(1.2f, 0.0f, 0.25f);
+        const float headingKp = 2.0f;
+
+        const float distanceDeadband = 3.0f;
+        const float headingDeadband = 1.5f;
+
+        // Where the PID takes over, and how long the cruise takes to come up to
+        // speed. The handover figure is the trapezoid's decel ramp: it is the
+        // distance that version already found was enough to shed cruise speed in.
+        const float handoverDistance = 70.0f;
+        const float softStartDistance = 30.0f;
+
+        const float intLimit = 100.0f;
+        const float maxHeadingCorrection = 45.0f;
+
+        const float wallTrimSlew = 0.3f;
+        const float offsetRateSlew = 0.4f;
+
+        const unsigned long loopTime = 10;
+        const unsigned long timeBeforeConsideredSettled = 200;
+
+        cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
+        // Capped at the cruise speed rather than MAX_PWM. The approach only ever
+        // has to come down from cruise, so there is nothing for it to do up there.
+        distancePid.setLimits(intLimit, (float)cruisePWM);
+
+        drive.resetEnc();
+        imu.update();
+        lidar.refreshAll();
+
+        const float baseHeading = mouse.getRotCust();
+        // Whatever resetEnc() left on the clock, so the PID measures from the same
+        // origin as `travelled` when it is seeded partway through the move.
+        const float odometryZero = drive.getCurrAvgDist();
+
+        float wallTrim = 0.0f;
+        float previousOffset = 0.0f;
+        float offsetRate = 0.0f;
+        bool haveOffset = false;
+        unsigned long lastWallSample = 0;
+
+        // False for the cruise phase, true once the PID has been handed the move.
+        // Latched: a front reading that pushes the stopping point back out again
+        // must not drop the robot back into open-loop cruise near a wall.
+        bool handedOver = false;
+
+        unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
+        float travelledAtFrontSample = 0.0f;
+
+        unsigned long previousLoopTime = millis();
+        unsigned long timeWhenInitiallySettled = 0;
+
+        while (true) {
+            unsigned long currentTime = millis();
+            if (currentTime - previousLoopTime < loopTime) {
+                continue;
+            }
+            previousLoopTime = currentTime;
+            imu.update();
+            lidar.poll();
+
+            const float travelled = drive.getCurrAvgDist();
+
+            const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
+            if (newFrontStamp != frontStamp) {
+                frontStamp = newFrontStamp;
+                travelledAtFrontSample = travelled;
+            }
+
+            const float distanceError = targetDistance - travelled;
+
+            float remaining = distanceError;
+            bool frontLimited = false;
+
+            if (targetDistance > 0) {
+                const float frontAllows =
+                    frontTravelLimit() - (travelled - travelledAtFrontSample);
+                if (frontAllows < remaining) {
+                    remaining = frontAllows;
+                    frontLimited = true;
+                }
+            }
+
+            // Distance still to run, as an unsigned quantity so the two phases can
+            // be reasoned about the same way forwards, backwards and into a wall.
+            // Front-limited it stays signed, because stopping short is the point
+            // and there is no undershoot to correct.
+            const float toGo = frontLimited ? remaining : abs(distanceError);
+
+            const bool inDistDeadband = toGo <= distanceDeadband;
+
+            const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
+            const bool inAngleDeadband = abs(headingError) <= headingDeadband;
+
+            // The handover. Seeding here rather than before the loop is what keeps
+            // the cruise out of the PID's history: it starts from the state the
+            // robot is actually in, with no integral from a phase it did not run.
+            if (!handedOver && toGo <= handoverDistance) {
+                handedOver = true;
+                distancePid.zeroAndSetTarget(odometryZero, targetDistance);
+
+                // zeroAndSetTarget leaves prev_error at zero, so the very next
+                // compute would read the whole remaining error as one tick's worth
+                // of change and spike the derivative. In the trapezoid that lands
+                // under the accel ramp and never reaches the motors; here there is
+                // no ramp to hide it. Prime the history with a throwaway compute so
+                // the first real one differentiates against a true previous error.
+                distancePid.compute(travelled);
+            }
+
+            float distancePWM;
+
+            if (handedOver) {
+                if (inDistDeadband) {
+                    distancePid.resetIntegral();
+                }
+                distancePWM = distancePid.compute(travelled);
+            } else {
+                // Flat at cruisePWM, eased in over softStartDistance. profileCap
+                // with no down-ramp is exactly that shape, and it floors at
+                // MIN_MOVING_PWM so the first tick still breaks stiction.
+                const float startCap =
+                    profileCap(abs(travelled), abs(remaining), softStartDistance, 0.0f,
+                               (float)cruisePWM, (float)MIN_MOVING_PWM);
+                distancePWM = (targetDistance > 0) ? startCap : -startCap;
+            }
+
+            // A wall ahead decelerates the robot in both phases. During cruise it
+            // is the only thing that will - the open-loop phase has no idea how
+            // close anything is - and during the approach it is what aims the PID
+            // at the standoff instead of at a target on the far side of the wall.
+            if (frontLimited) {
+                const float frontCap = profileCap(abs(travelled), remaining, 0.0f,
+                                                  handoverDistance, (float)cruisePWM,
+                                                  (float)MIN_MOVING_PWM);
+                distancePWM = constrain(distancePWM, -frontCap, frontCap);
+            }
+
+            if (inDistDeadband) {
+                distancePWM = 0;
+            } else if (abs(distancePWM) < MIN_MOVING_PWM) {
+                distancePWM = (distanceError > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
+            }
+
+            float headingPWM = headingKp * headingError;
+            headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
+
+            if (inAngleDeadband) {
+                headingPWM = 0;
+            } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
+                // Same stiction floor, and the same reason for the wider heading
+                // deadband, as driveDistanceProfiled.
+                headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+            }
+
+            drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
+
+            if (inDistDeadband && inAngleDeadband) {
+                if (timeWhenInitiallySettled == 0) {
+                    timeWhenInitiallySettled = currentTime;
+                }
+
+                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                    drive.stop();
+
+                    if (frontLimited) {
+                        Serial.print(F("front wall: stopped "));
+                        Serial.print(distanceError);
+                        Serial.println(F("mm short"));
+                    }
+
+                    return;
+                }
+            } else {
+                timeWhenInitiallySettled = 0;
+            }
+        }
+    }
+
     // Turn by `angleToTurn` degrees under the same trapezoidal envelope, tracking
     // the absolute global heading so per-turn error does not accumulate over a
     // run - the same bookkeeping turnByAngle does.
