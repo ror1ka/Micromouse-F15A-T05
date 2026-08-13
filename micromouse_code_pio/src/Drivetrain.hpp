@@ -60,6 +60,20 @@ public:
         return (getLeftWheelDist() + getRightWheelDist()) / 2;
     }
 
+    // Whichever wheel has turned least, in mm, signed the same way.
+    //
+    // On flat board this tracks the average to within the heading correction, so
+    // it is not a distance measurement in its own right. It is the one to read
+    // when a wheel might be slipping: a wheel spinning against the floor seam
+    // still ticks, and getCurrAvgDist() averages those ticks in as though the
+    // robot had travelled, while the wheel that is actually against something
+    // does not. See Movement::SeamGuard.
+    float getMinWheelDist() {
+        const float left = getLeftWheelDist();
+        const float right = getRightWheelDist();
+        return (abs(left) < abs(right)) ? left : right;
+    }
+
     // Zeroes the odometry. Call this before every move that measures distance.
     void resetEnc() {
         leftEncoder.resetCount();
