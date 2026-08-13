@@ -11,6 +11,7 @@
 #include"task4_code/task4_2ChainingMovements.hpp"
 #include "task4_code/maze_route.h"
 #include "task4_code/task4AutonomousMapping.hpp"
+#include"task4_code/MazeAutonomousPlanner.hpp"
 
 constexpr unsigned long BAUD = 115200;
 
@@ -23,9 +24,9 @@ MazeMap maze;
 MazeAutonomousPlanner planner;
 
 Pose startPose = {
-    START_ROW,
-    START_COL,
-    START_HEADING
+    4,
+    4,
+    NORTH
 };
 
 // Current estimated robot pose.
@@ -121,17 +122,15 @@ void loop() {
       planner,
       pose,
       startPose,
-      GOAL_ROW,
-      GOAL_COL
+      4,
+      5
   );
-  while (true) {
-
-  }
+  
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
   // chainMovement(mouse, "lfrffffffrflf");
-  chainMission(mouse, MISSION, NUM_COMMANDS);
+ // chainMission(mouse, MISSION, NUM_COMMANDS);
   // mouse.printLidar();
 
   // Other task 3 routines, for when you want to test one on its own:
