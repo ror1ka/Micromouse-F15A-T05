@@ -871,8 +871,7 @@ public:
         const float intLimit = 100.0f;
         const float maxHeadingCorrection = 45.0f;
 
-        const float wallTrimSlew = 0.3f;
-        const float offsetRateSlew = 0.4f;
+     
 
         const unsigned long loopTime = 10;
         const unsigned long timeBeforeConsideredSettled = 200;
@@ -892,10 +891,7 @@ public:
         const float odometryZero = drive.getCurrAvgDist();
 
         float wallTrim = 0.0f;
-        float previousOffset = 0.0f;
-        float offsetRate = 0.0f;
-        bool haveOffset = false;
-        unsigned long lastWallSample = 0;
+    
 
         // False for the cruise phase, true once the PID has been handed the move.
         // Latched: a front reading that pushes the stopping point back out again
