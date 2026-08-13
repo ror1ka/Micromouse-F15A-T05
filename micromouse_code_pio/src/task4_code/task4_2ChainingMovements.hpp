@@ -144,7 +144,7 @@ inline void chainMission(Micromouse& mouse, const Command* mission, int count) {
                     Serial.println(F("  (below the deadband, skipped)"));
                 } else {
                     // Deliberately not the Lidar variant. See the note at the top.
-                    mouse.driveDistanceCruiseLidar(value, MISSION_ZONE_DRIVE_PWM+20);
+                    mouse.driveDistanceCruiseNoLidar(value, MISSION_ZONE_DRIVE_PWM+20);
                 }
                 break;
 
