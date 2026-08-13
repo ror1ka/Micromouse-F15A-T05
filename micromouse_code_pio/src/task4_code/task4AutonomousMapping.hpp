@@ -169,17 +169,17 @@ inline void turnToDirection(Micromouse& mouse, Pose& pose, Direction targetDirec
 
     if (directionDiff == 1) {
         // 90 degee turn right
-        mouse.turnByAngleProfiled(TURN_RIGHT, MAPPING_TURN_PWM);
+        mouse.turnByAngleProfiled(90.0f, MAPPING_TURN_PWM);
         updatePoseRight(pose);
     } else if (directionDiff == 2) {
         // 180 degree turn right
-        mouse.turnByAngleProfiled(TURN_RIGHT, MAPPING_TURN_PWM);
+        mouse.turnByAngleProfiled(90.0f, MAPPING_TURN_PWM);
         updatePoseRight(pose);
-        mouse.turnByAngleProfiled(TURN_RIGHT, MAPPING_TURN_PWM);
+        mouse.turnByAngleProfiled(90.0f, MAPPING_TURN_PWM);
         updatePoseRight(pose);
     } else if (directionDiff == 3) {
         // 90 degree turn left
-        mouse.turnByAngleProfiled(TURN_LEFT, MAPPING_TURN_PWM);
+        mouse.turnByAngleProfiled(-90.0f, MAPPING_TURN_PWM);
         updatePoseLeft(pose);
     }
     // Allows micromouse to settle
