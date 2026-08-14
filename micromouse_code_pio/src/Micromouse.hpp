@@ -107,6 +107,7 @@ public:
   float getRotCust() { return imuSensor.getAngleZCustom(); }
   float getPrevRot() const { return motion.getPrevRot(); }
   static float normaliseAngle(float angle) { return Imu::normaliseAngle(angle); }
+  void fullResetMpu() { return imuSensor.fullReset(); }
 
   //////// Odometry ////////
   float getLeftWheelDist() { return drivetrain.getLeftWheelDist(); }

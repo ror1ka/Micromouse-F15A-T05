@@ -280,12 +280,14 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
         if (!maze.hasBeenVisited(pose.row, pose.col)) {
             // Senses current cell if it hasn't been visited already
             if (!senseCurrentCell(mouse, maze, pose)) {
-                // Lidar error 
+                // Lidar error
                 delay(SETTLE_TIME);
                 continue;
                 // return false;
             }
         }
+
+        mouse.fullResetMpu();
 
         drawMazeOled(mouse, maze, pose);
 
