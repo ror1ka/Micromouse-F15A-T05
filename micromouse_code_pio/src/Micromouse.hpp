@@ -1,5 +1,8 @@
 #pragma once
 
+// Generative-AI assistance notice: the typed motion and recovery forwards marked
+// "AI-assisted" were written with OpenAI Codex and reviewed by the team.
+
 #include <Arduino.h>
 #include <devices/Devices.hpp>
 
@@ -25,10 +28,15 @@ public:
 
   //////// Setup ////////
   // Wire.begin() must have been called before either of these.
-  void setupOled() { oledDisplay.setup(); }
-  void setupIMU() { imuSensor.setup(); }
-  void setupLidar() { lidarArray.setup(); }
-  void initialiseGlobalHeading() { motion.initialiseGlobalHeading(); }
+  bool setupOled() { return oledDisplay.setup(); }
+  bool oledHealthy() { return oledDisplay.healthy(); }
+  bool setupIMU() { return imuSensor.setup(); }
+  bool recoverIMU() { return imuSensor.recover(); }
+  bool setupLidar() { return lidarArray.setup(); }
+  // AI-assisted recovery: re-enumerate the complete shared-address LiDAR array.
+  bool recoverLidar() { return lidarArray.recoverAll(); }
+  bool initialiseGlobalHeading() { return motion.initialiseGlobalHeading(); }
+  bool verifyIMU() { return imuSensor.verifyConfiguration(); }
 
   //////// Direct access to the parts ////////
   Drivetrain& drive() { return drivetrain; }
@@ -44,6 +52,7 @@ public:
   void setForwardPWMVelocity(int leftPWM, int rightPWM) {
     drivetrain.setForwardPWMVelocity(leftPWM, rightPWM);
   }
+  void stop() { drivetrain.stop(); }
 
   //////// Movement ////////
   void turnLeft(int16_t speed, float target, float err) { motion.turnLeft(speed, target, err); }
@@ -59,8 +68,8 @@ public:
   void driveDistanceProfiled(float targetDistance, int maxPWM) {
     motion.driveDistanceProfiled(targetDistance, maxPWM);
   }
-  void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
-    motion.turnByAngleProfiled(angleToTurn, maxTurningPWM);
+  MotionResult turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
+    return motion.turnByAngleProfiled(angleToTurn, maxTurningPWM);
   }
   // As driveDistanceProfiled, but steers off the side LiDARs to stay centred in
   // the corridor and stops short of any wall it finds ahead.
@@ -70,8 +79,8 @@ public:
   // Same LiDAR steering and front stop as driveDistanceProfiledLidar, but cruises
   // at a constant PWM and hands the last stretch to the distance PID instead of
   // running one PID under a trapezoidal envelope.
-  void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
-    motion.driveDistanceCruiseLidar(targetDistance, cruisePWM);
+  MotionResult driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
+    return motion.driveDistanceCruiseLidar(targetDistance, cruisePWM);
   }
 
   void driveDistanceCruiseNoLidar(float targetDistance, int cruisePWM) {
@@ -116,7 +125,6 @@ public:
   //////// Debugging ////////
   void printIMU() { imuSensor.print(); }
   void printLidar() { lidarArray.print(); }
-  void printMessageToOled(char* message) { oledDisplay.printMessage(64, 32, message); }
 
 private:
   // Declared before motion, which holds references to all three.

@@ -1,11 +1,16 @@
 #pragma once
 
+// Generative-AI assistance notice: the frontier-recovery helper marked
+// "AI-assisted" was written with OpenAI Codex and reviewed by the team.
+
 #include <Arduino.h>
 
 constexpr uint8_t MAZE_WIDTH = 9;
 constexpr uint8_t MAZE_HEIGHT = 9;
 constexpr uint8_t NUM_CELLS = MAZE_HEIGHT * MAZE_WIDTH;
-// Number of cells excluding the corners
+// The standard physical board is octagonal: its four chamfers remove three
+// nominal grid positions per corner. Confirm with the demonstrator that this
+// fixed board-geometry mask (69 physical cells) is the marking convention.
 constexpr uint8_t NUM_REACHABLE_CELLS = NUM_CELLS - (3 * 4);
 constexpr uint8_t NUM_DIRECTIONS = 4;
 
@@ -45,28 +50,20 @@ class MazeMap {
             for (uint8_t i = 0; i < VISITED_BYTES; i++) {
                 visited[i] = 0;
             }
+            for (uint8_t i = 0; i < CHALLENGED_BYTES; i++) {
+                challengedWalls[i] = 0;
+            }
         }
 
         bool inMaze(int row, int col) {
             if (row >= MAZE_HEIGHT || row < 0 || col >= MAZE_WIDTH || col < 0) {
                 return false;
             }
-            // Returns false if in one of the corners
-            if ((row == 0 && col == 0) || 
-                (row == 0 && col == 1) || 
-                (row == 1 && col == 0) ||
-                (row == 0 && col == 8) ||
-                (row == 0 && col == 7) ||
-                (row == 1 && col == 8) || 
-                (col == 8 && row == 8) || 
-                (col == 8 && row == 7) || 
-                (col == 7 && row == 8) ||
-                (col == 0 && row == 8) ||
-                (col == 0 && row == 7) ||
-                (col == 1 && row == 8)) {
-                return false;
-            }
-            return true;
+            // Each octagonal chamfer removes the three positions whose summed
+            // distance from its nearest vertical/horizontal border is < 2.
+            const uint8_t edgeRow = min(row, (int)MAZE_HEIGHT - 1 - row);
+            const uint8_t edgeCol = min(col, (int)MAZE_WIDTH - 1 - col);
+            return edgeRow + edgeCol >= 2;
         }
 
         bool hasBeenVisited(int row, int col) {
@@ -133,11 +130,51 @@ class MazeMap {
             if (inMaze(sharedWallCellRow, sharedWallCellCol)) {
                 writeWall(sharedWallCellRow, sharedWallCellCol, oppositeDirection, wallState);
             }
+            // Opening an edge invalidates any earlier confirmation that it was a
+            // wall. Keep this evidence symmetric exactly like the wall itself.
+            if (wallState != WALL) {
+                writeWallChallenge(row, col, direction, false);
+                if (inMaze(sharedWallCellRow, sharedWallCellCol)) {
+                    writeWallChallenge(sharedWallCellRow, sharedWallCellCol,
+                                       oppositeDirection, false);
+                }
+            }
+        }
+
+        bool wallWasChallenged(int row, int col, Direction direction) {
+            if (!inMaze(row, col)) return true;
+            const uint16_t index = wallChallengeIndex(row, col, direction);
+            return (challengedWalls[index / 8] & (1 << (index % 8))) != 0;
+        }
+
+        // A challenged wall has been approached from a known cell centre and
+        // independently reclassified by four medians. Mirror the evidence across
+        // the shared edge so either traversal direction sees the same fact.
+        void markWallChallenged(int row, int col, Direction direction) {
+            if (!inMaze(row, col) || getWallState(row, col, direction) != WALL) {
+                return;
+            }
+            writeWallChallenge(row, col, direction, true);
+            int neighbourRow;
+            int neighbourCol;
+            if (updateNeighbour(row, col, direction, neighbourRow, neighbourCol)) {
+                Direction opposite = static_cast<Direction>((direction + 2) % 4);
+                writeWallChallenge(neighbourRow, neighbourCol, opposite, true);
+            }
+        }
+
+        // Emergency evidence epoch: when every cut edge has been challenged but
+        // the physical maze is still disconnected, allow exactly one later pass
+        // to test whether a correlated transient reading poisoned that evidence.
+        void clearAllWallChallenges() {
+            for (uint8_t i = 0; i < CHALLENGED_BYTES; i++) {
+                challengedWalls[i] = 0;
+            }
         }
 
         uint8_t getCompletionPercent() {
             return static_cast<uint8_t>((100 * numVisited)/NUM_REACHABLE_CELLS);
-        } 
+        }
 
         // Returns if the neighbour in the current direction of the micromouse is a valid cell and 
         // updates the input neighbourRow/Col to be this neighbour cell
@@ -158,6 +195,8 @@ class MazeMap {
 
     private:
         static constexpr uint8_t VISITED_BYTES = (NUM_CELLS + 7) / 8;
+        static constexpr uint8_t CHALLENGED_BYTES =
+            (NUM_CELLS * NUM_DIRECTIONS + 7) / 8;
         // Two bits per direction, so a WallState occupies bits (2*d) and (2*d)+1.
         static constexpr uint8_t WALL_MASK = 0x03;
 
@@ -178,8 +217,23 @@ class MazeMap {
             walls[cellIndex] |= ((uint8_t)wallState & WALL_MASK) << shift;
         }
 
+        static uint16_t wallChallengeIndex(int row, int col,
+                                           Direction direction) {
+            return ((uint16_t)cellIndexOf(row, col) * NUM_DIRECTIONS) +
+                   (uint8_t)direction;
+        }
+
+        void writeWallChallenge(int row, int col, Direction direction,
+                                bool challenged) {
+            const uint16_t index = wallChallengeIndex(row, col, direction);
+            const uint8_t mask = (uint8_t)(1 << (index % 8));
+            if (challenged) challengedWalls[index / 8] |= mask;
+            else challengedWalls[index / 8] &= (uint8_t)~mask;
+        }
+
         // Stores if a certain cell has already been visited, one bit per cell
         uint8_t visited[VISITED_BYTES];
+        uint8_t challengedWalls[CHALLENGED_BYTES];
         // Stores whether or not there is a wall from the current cell in the given
         // direction, two bits per direction
         uint8_t walls[NUM_CELLS];

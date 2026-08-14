@@ -1,5 +1,8 @@
 #pragma once
 
+// Generative-AI assistance notice: the cardinal-turn correction marked
+// "AI-assisted" was written with OpenAI Codex and reviewed by the team.
+
 // Every hardware pin, robot dimension and tuning constant lives here so there
 // is exactly one place to edit when the robot is rewired or retuned.
 // These are `constexpr` rather than `#define` so they are typed and scoped -
@@ -43,10 +46,12 @@ constexpr uint16_t COUNTS_PER_REVOLUTION = 700;
 constexpr int LEFT = 1;
 constexpr int RIGHT = 2;
 
-// Nominal quarter turns. TURN_RIGHT is 89 rather than 90 to compensate for the
-// robot consistently overshooting to the right by about a degree.
-constexpr float TURN_LEFT = 89.0f;
-constexpr float TURN_RIGHT = -89.0f;
+// AI-assisted cardinal targets: the profiled turn is now closed-loop against one
+// persistent global yaw frame. Each logical quarter turn must therefore advance
+// that target by exactly 90 degrees; an 89-degree increment would accumulate a
+// four-degree frame error after four turns.
+constexpr float TURN_LEFT = 90.0f;
+constexpr float TURN_RIGHT = -90.0f;
 
 // Angle (deg) remaining at which turnLeft/turnRight start scaling speed down.
 constexpr float ROT_ERR = 35.0f;

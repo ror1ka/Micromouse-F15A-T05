@@ -1,5 +1,9 @@
 #pragma once
 
+// Generative-AI assistance notice: the evidence-quality and all-sensor recovery
+// changes marked "AI-assisted" were written with OpenAI Codex and reviewed by
+// the team.
+
 #include <Arduino.h>
 #include <VL6180X.h>
 #include <Wire.h>
@@ -41,20 +45,15 @@ public:
     // Returned by readResult() when out of range
     static constexpr int NO_TARGET = -2;
 
-    // The names are set here rather than in the initialiser below because F()
-    // expands to a statement-expression, which is only legal inside a function.
-    LidarArray() {
-        channels[Front].name = F("Front");
-        channels[Left].name = F("Left");
-        channels[Right].name = F("Right");
-    }
-
-    void setup() {
+    bool setup() {
         // Without this a sensor that browns out mid-transfer can leave SDA held
         // low, and every later I2C call blocks forever inside the Wire driver -
         // the robot simply stops dead with the motors still powered. With it,
         // the transfer gives up and the bus is reset instead.
         Wire.setWireTimeout(WIRE_TIMEOUT_US, true);
+
+        measuring = false;
+        active = Front;
 
         // Disable every sensor first so none of them respond at DEFAULT_ADDRESS
         // while we are assigning addresses.
@@ -65,14 +64,19 @@ public:
 
         delay(50);
 
+        // AI-assisted retry fix: a physical VL6180X returns to 0x29 whenever
+        // XSHUT is lowered. Reconstruct its driver object too; otherwise a
+        // partially successful first setup leaves the next attempt talking to
+        // stale 0x30-0x32 addresses forever.
+        for (uint8_t i = 0; i < Count; i++) {
+            channels[i].device = VL6180X();
+            channels[i].reading = NO_READING;
+            channels[i].readingTime = 0;
+        }
+
         // Enable and assign addresses one at a time.
         for (uint8_t i = 0; i < Count; i++) {
-            configure(channels[i]);
-
-            Serial.print(F("LiDAR on pin "));
-            Serial.print(channels[i].enablePin);
-            Serial.print(F(" assigned address 0x"));
-            Serial.println(channels[i].address, HEX);
+            if (!configure(channels[i])) return false;
         }
 
         // The first reading after power-up is slow, so give that one a long
@@ -80,10 +84,46 @@ public:
         for (uint8_t i = 0; i < Count; i++) {
             channels[i].device.setTimeout(FIRST_READ_TIMEOUT);
             channels[i].device.readRangeSingleMillimeters();
+            if (channels[i].device.last_status != 0 ||
+                channels[i].device.timeoutOccurred() || Wire.getWireTimeoutFlag()) {
+                Wire.clearWireTimeoutFlag();
+                return false;
+            }
             channels[i].device.setTimeout(READ_TIMEOUT);
         }
+        return true;
+    }
 
-        Serial.println(F("All LiDARs initialised"));
+    // AI-assisted recovery: every VL6180X returns to address 0x29 after a
+    // brownout. Re-enumerating the complete array avoids collisions that an
+    // individual-sensor reset cannot resolve. Call only while the motors are off.
+    bool recoverAll() {
+        measuring = false;
+        active = Front;
+        for (uint8_t i = 0; i < Count; i++) {
+            pinMode(channels[i].enablePin, OUTPUT);
+            digitalWrite(channels[i].enablePin, LOW);
+        }
+        delay(20);
+
+        for (uint8_t i = 0; i < Count; i++) {
+            channels[i].device = VL6180X();
+            channels[i].reading = NO_READING;
+            channels[i].readingTime = 0;
+            if (!configure(channels[i])) return false;
+        }
+
+        for (uint8_t i = 0; i < Count; i++) {
+            channels[i].device.setTimeout(FIRST_READ_TIMEOUT);
+            channels[i].device.readRangeSingleMillimeters();
+            if (channels[i].device.last_status != 0 ||
+                channels[i].device.timeoutOccurred() || Wire.getWireTimeoutFlag()) {
+                Wire.clearWireTimeoutFlag();
+                return false;
+            }
+            channels[i].device.setTimeout(READ_TIMEOUT);
+        }
+        return true;
     }
 
     //////// Non-blocking path, for control loops ////////
@@ -119,9 +159,12 @@ public:
         // at a time, exactly as the blocking path does - three VL6180Xs all
         // illuminating at once can see each other's light.
         active = (Id)((active + 1) % Count);
-        startMeasurement(channels[active]);
-        measurementStart = millis();
-        measuring = true;
+        if (startMeasurement(channels[active])) {
+            measurementStart = millis();
+            measuring = true;
+        } else {
+            recordFailure(channels[active], now);
+        }
     }
 
     // Most recent trustworthy measurement in mm, or NO_READING if the sensor
@@ -131,7 +174,8 @@ public:
     int latest(Id id) const {
         const Channel& channel = channels[id];
 
-        if (channel.reading < 0 || millis() - channel.readingTime > STALE_TIMEOUT) {
+        if (channel.reading == NO_READING ||
+            millis() - channel.readingTime > STALE_TIMEOUT) {
             return NO_READING;
         }
 
@@ -199,7 +243,9 @@ public:
 
         int numTotalValidReadings = validReadings + numTargetOutsideRangeReadings;
 
-        if (numTotalValidReadings == 0) {
+        // AI-assisted evidence rule: never declare an edge open or closed from
+        // one lucky sample surrounded by failures. Three of five is the minimum.
+        if (numTotalValidReadings < 3) {
             return NO_READING;
         }
 
@@ -250,12 +296,8 @@ private:
     static constexpr unsigned long MEASUREMENT_TIMEOUT = 45;   // ms
     // Older than this and a cached reading is no longer about where the robot is.
     static constexpr unsigned long STALE_TIMEOUT = 250;        // ms
-    // Consecutive failures before a sensor is assumed to have lost its address.
-    static constexpr uint8_t FAILURES_BEFORE_RECOVERY = 4;
-    // Recovery blocks the caller, so at most one attempt per sensor per period.
-    static constexpr unsigned long RECOVERY_INTERVAL = 2000;   // ms
     // Wire's own bus timeout, in microseconds.
-    static constexpr uint32_t WIRE_TIMEOUT_US = 25000;
+    static constexpr uint32_t WIRE_TIMEOUT_US = 5000;
 
     // Ready bit pattern in RESULT__INTERRUPT_STATUS_GPIO: bits 2:0 == 0b100.
     static constexpr uint8_t RANGE_READY_MASK = 0x07;
@@ -271,21 +313,16 @@ private:
         VL6180X device;
         uint8_t address;
         uint8_t enablePin;
-        // Set by the constructor; only used for diagnostic messages.
-        const __FlashStringHelper* name;
-
         // Last trustworthy measurement in mm, or NO_READING.
         int16_t reading;
         unsigned long readingTime;
-        uint8_t consecutiveFailures;
-        unsigned long lastRecovery;
     };
 
-    // Indices must line up with Id. Names are filled in by the constructor.
+    // Indices must line up with Id.
     Channel channels[Count] = {
-        {{}, LIDAR_FRONT_ADDRESS, LIDAR_FRONT, nullptr, NO_READING, 0, 0, 0},
-        {{}, LIDAR_LEFT_ADDRESS,  LIDAR_LEFT,  nullptr, NO_READING, 0, 0, 0},
-        {{}, LIDAR_RIGHT_ADDRESS, LIDAR_RIGHT, nullptr, NO_READING, 0, 0, 0},
+        {{}, LIDAR_FRONT_ADDRESS, LIDAR_FRONT, NO_READING, 0},
+        {{}, LIDAR_LEFT_ADDRESS,  LIDAR_LEFT,  NO_READING, 0},
+        {{}, LIDAR_RIGHT_ADDRESS, LIDAR_RIGHT, NO_READING, 0},
     };
 
     // Sampler state. `active` is the sensor currently measuring, or the one
@@ -294,8 +331,46 @@ private:
     bool measuring = false;
     unsigned long measurementStart = 0;
 
+    // AI-assisted checked register access.  The Pololu driver's last_status
+    // reports the address phase, but an interrupted request can still return
+    // fewer bytes.  A short read must never be interpreted as a clear path.
+    static bool checkedReadReg(Channel& channel, uint16_t reg, uint8_t& value) {
+        Wire.clearWireTimeoutFlag();
+        Wire.beginTransmission(channel.device.getAddress());
+        Wire.write((uint8_t)(reg >> 8));
+        Wire.write((uint8_t)reg);
+        if (Wire.endTransmission() != 0 || Wire.getWireTimeoutFlag()) {
+            Wire.clearWireTimeoutFlag();
+            return false;
+        }
+
+        const uint8_t received = Wire.requestFrom(channel.device.getAddress(),
+                                                  (uint8_t)1);
+        if (received != 1 || Wire.available() != 1 || Wire.getWireTimeoutFlag()) {
+            while (Wire.available()) Wire.read();
+            Wire.clearWireTimeoutFlag();
+            return false;
+        }
+
+        value = Wire.read();
+        return true;
+    }
+
+    static bool checkedWriteReg(Channel& channel, uint16_t reg, uint8_t value) {
+        Wire.clearWireTimeoutFlag();
+        Wire.beginTransmission(channel.device.getAddress());
+        Wire.write((uint8_t)(reg >> 8));
+        Wire.write((uint8_t)reg);
+        Wire.write(value);
+        if (Wire.endTransmission() != 0 || Wire.getWireTimeoutFlag()) {
+            Wire.clearWireTimeoutFlag();
+            return false;
+        }
+        return true;
+    }
+
     // Brings one sensor out of shutdown and moves it off the shared default address.
-    void configure(Channel& channel) {
+    bool configure(Channel& channel) {
         digitalWrite(channel.enablePin, HIGH);
         delay(50);
 
@@ -304,18 +379,31 @@ private:
         channel.device.writeReg(VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME, MAX_CONVERGENCE_TIME);
         channel.device.setTimeout(READ_TIMEOUT);
         channel.device.setAddress(channel.address);
+        uint8_t modelId = 0;
+        uint8_t convergenceTime = 0;
+        if (!checkedReadReg(channel, VL6180X::IDENTIFICATION__MODEL_ID, modelId) ||
+            !checkedReadReg(channel, VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME,
+                            convergenceTime) ||
+            modelId != 0xB4 || convergenceTime != MAX_CONVERGENCE_TIME) {
+            return false;
+        }
+        return true;
     }
 
     // Kicks off a single-shot measurement without waiting for it. The interrupt
     // is cleared first so a result left over from an abandoned measurement
     // cannot be mistaken for this one's.
-    static void startMeasurement(Channel& channel) {
-        channel.device.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01);
-        channel.device.writeReg(VL6180X::SYSRANGE__START, 0x01);
+    static bool startMeasurement(Channel& channel) {
+        return checkedWriteReg(channel, VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01) &&
+               checkedWriteReg(channel, VL6180X::SYSRANGE__START, 0x01);
     }
 
     static bool measurementReady(Channel& channel) {
-        const uint8_t status = channel.device.readReg(VL6180X::RESULT__INTERRUPT_STATUS_GPIO);
+        uint8_t status = 0;
+        if (!checkedReadReg(channel, VL6180X::RESULT__INTERRUPT_STATUS_GPIO,
+                            status)) {
+            return false;
+        }
         return (status & RANGE_READY_MASK) == RANGE_READY_VALUE;
     }
 
@@ -326,15 +414,24 @@ private:
     // error 15 (range overflow) are what a VL6180X reports when it is pointed
     // at open space, and the range register is not meaningful in either case.
     static int readResult(Channel& channel) {
-        const uint8_t rangeStatus = channel.device.readRangeStatus();
-        const uint8_t raw = channel.device.readReg(VL6180X::RESULT__RANGE_VAL);
-        channel.device.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01);
+        uint8_t statusRegister = 0;
+        if (!checkedReadReg(channel, VL6180X::RESULT__RANGE_STATUS,
+                            statusRegister)) {
+            return NO_READING;
+        }
+        const uint8_t rangeStatus = statusRegister >> 4;
+        uint8_t raw = 0;
+        if (!checkedReadReg(channel, VL6180X::RESULT__RANGE_VAL, raw)) {
+            return NO_READING;
+        }
+        if (!checkedWriteReg(channel, VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01)) {
+            return NO_READING;
+        }
 
         // When target too far to be properly read
-        if (rangeStatus == VL6180X_ERROR_ECEFAIL ||
-            rangeStatus == VL6180X_ERROR_NOCONVERGE ||
-            rangeStatus == VL6180X_ERROR_RANGEIGNORE ||
-            rangeStatus == VL6180X_ERROR_RAWOFLOW ||
+        // AI-assisted evidence split: only explicit overflow proves the target
+        // is beyond range. Convergence/ignore failures are not proof of open space.
+        if (rangeStatus == VL6180X_ERROR_RAWOFLOW ||
             rangeStatus == VL6180X_ERROR_RANGEOFLOW) {
             return NO_TARGET;
         }
@@ -351,7 +448,10 @@ private:
     // it is being read, and a caller cannot accidentally clear that history by
     // filing the result a second time.
     int readBlocking(Channel& channel) {
-        startMeasurement(channel);
+        if (!startMeasurement(channel)) {
+            recordFailure(channel, millis());
+            return NO_READING;
+        }
 
         const unsigned long start = millis();
         while (!measurementReady(channel)) {
@@ -371,8 +471,12 @@ private:
     // the sensor answered but saw nothing - that is a normal, healthy result in
     // open space and must not count as a fault.
     void recordReading(Channel& channel, int distance, unsigned long now) {
-        channel.consecutiveFailures = 0;
-        channel.reading = (distance > 0) ? (int16_t)distance : (int16_t)NO_READING;
+        if (distance == NO_READING) {
+            recordFailure(channel, now);
+            return;
+        }
+
+        channel.reading = (int16_t)distance;
         channel.readingTime = now;
     }
 
@@ -383,32 +487,8 @@ private:
     void recordFailure(Channel& channel, unsigned long now) {
         channel.reading = NO_READING;
 
-        if (channel.consecutiveFailures < 255) {
-            channel.consecutiveFailures++;
-        }
-
-        if (channel.consecutiveFailures < FAILURES_BEFORE_RECOVERY) {
-            return;
-        }
-
-        if (channel.lastRecovery != 0 && now - channel.lastRecovery < RECOVERY_INTERVAL) {
-            return;
-        }
-
-        Serial.print(channel.name);
-        Serial.println(F(" LiDAR not responding, re-initialising"));
-
-        channel.lastRecovery = now;
-        channel.consecutiveFailures = 0;
-
-        digitalWrite(channel.enablePin, LOW);
-        delay(10);
-
-        // It comes back up at the default address, so point the object there
-        // before trying to talk to it again.
-        // channel.device.setAddress(DEFAULT_ADDRESS);
-        // CHANGED ABOVE LINE TO:
-        channel.device = VL6180X();
-        configure(channel);
+        channel.readingTime = now;
+        // Recovery is deliberately deferred to recoverAll(), after the movement
+        // routine has stopped both motors. Never block inside the 10 ms drive loop.
     }
 };

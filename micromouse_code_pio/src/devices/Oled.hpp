@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Arduino.h>
-#include "Wire.h"
+// Generative-AI assistance notice: marking-time serial diagnostics and the
+// checked display-presence probe marked below were written with OpenAI Codex
+// assistance and reviewed by the team.
 
-#include <SPI.h>
+#include <Arduino.h>
 #include <Wire.h>
 #include <U8g2lib.h>
 
@@ -12,18 +13,37 @@
 
 class Oled {
 public:
-    Oled() : u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE) {}
+    Oled() {
+        u8g2_Setup_ssd1306_i2c_128x64_noname_1(
+            &u8g2, U8G2_R0, u8x8_byte_arduino_hw_i2c,
+            u8x8_gpio_and_delay_arduino);
+    }
 
-    void setup() {
-        u8g2.begin();
+    bool setup() {
+        u8g2_InitDisplay(&u8g2);
+        u8g2_ClearDisplay(&u8g2);
+        u8g2_SetPowerSave(&u8g2, 0);
+        return healthy();
+    }
 
-        Serial.println("OLED is Setup!");
+    // AI-assisted spec guard: U8g2 intentionally ignores I2C ACK status. Probe
+    // the same address explicitly so Task 4.3 cannot begin with a blank required
+    // map/percentage display after a cable fault or OLED brownout.
+    bool healthy() {
+        Wire.clearWireTimeoutFlag();
+        Wire.beginTransmission(OLED_ADDRESS);
+        const uint8_t status = Wire.endTransmission();
+        if (status != 0 || Wire.getWireTimeoutFlag()) {
+            Wire.clearWireTimeoutFlag();
+            return false;
+        }
+        return true;
     }
 
     void clear() {
-        u8g2.firstPage();
+        u8g2_FirstPage(&u8g2);
         do {
-        } while (u8g2.nextPage());
+        } while (u8g2_NextPage(&u8g2));
     }
 
     // void printMessage(int x, int y, const char* text) {
@@ -33,19 +53,11 @@ public:
     //     u8g2.sendBuffer();
     // }
 
-    void printMessage(int x, int y, const char* text) {
-        Serial.println("OLED is Printing message");
-        u8g2.setFont(u8g2_font_ncenB10_tr);
-        u8g2.firstPage();
-        do {
-            u8g2.drawStr(x, y, text);
-        } while (u8g2.nextPage());
-    }
-
-    U8G2_SSD1306_128X64_NONAME_1_HW_I2C& getDisplay() {
+    u8g2_t& getDisplay() {
       return u8g2;
     }
 private:
-    U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2;
+    static constexpr uint8_t OLED_ADDRESS = 0x3C;
+    u8g2_t u8g2;
 
 };

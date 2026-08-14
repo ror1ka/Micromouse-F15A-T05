@@ -1,5 +1,9 @@
 #pragma once
 
+// Generative-AI assistance notice: the motion-result, watchdog, and absolute
+// heading changes marked "AI-assisted" were written with OpenAI Codex and
+// reviewed by the team.
+
 #include <Arduino.h>
 #include <devices/Imu.hpp>
 #include <devices/Lidar.hpp>
@@ -25,6 +29,22 @@
 //       long run. Both wait to settle inside a deadband before returning.
 //
 // All angles are degrees, all distances millimetres.
+enum MotionResult : uint8_t {
+    MOTION_OK,
+    MOTION_FRONT_BLOCKED,
+    MOTION_STALLED,
+    MOTION_TIMED_OUT,
+    // No motor command was issued: the caller may recover the device and retry
+    // without changing its physical-pose belief.
+    MOTION_PREFLIGHT_FAULT,
+    // The gyro remained healthy and odometry is valid, but live ranging failed.
+    // A segmented translation may safely resume from its measured distance.
+    MOTION_LIDAR_FAULT,
+    // A sensor/odometry failure happened while motors may have been energised.
+    // The missing motion cannot be reconstructed safely from this result.
+    MOTION_POSE_UNCERTAIN
+};
+
 class Movement {
 public:
     Movement(Drivetrain& drive, Imu& imu, LidarArray& lidar, PIDController pid)
@@ -32,9 +52,10 @@ public:
 
     // Seeds the global heading from wherever the robot is currently pointing.
     // Must be called once at startup before turnByAngle is used.
-    void initialiseGlobalHeading() {
-        imu.update();
+    bool initialiseGlobalHeading() {
+        if (!imu.update()) return false;
         targetGlobalHeading = getRot();
+        return true;
     }
 
     //////// Original routines ////////
@@ -641,7 +662,7 @@ public:
     // is aged against odometry. Forward moves only for the trim, same as there.
     //
     // ONLY PASS A POSITIVE cruisePWM. To go backwards make targetDistance negative.
-    void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
+    MotionResult driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
         // The gains the other drive routines settled on. Not constructed with any
         // state that matters yet - it is seeded at the handover, below.
         PIDController distancePid(1.2f, 0.0f, 0.25f);
@@ -664,17 +685,42 @@ public:
 
         const unsigned long loopTime = 10;
         const unsigned long timeBeforeConsideredSettled = 200;
+        // AI-assisted watchdogs: a controller must always return with the motors
+        // stopped, even if an encoder, motor, IMU, or I2C device stops responding.
+        const unsigned long motionTimeout = 8000;
+        const unsigned long progressTimeout = 350;
+        const float minimumProgress = 0.7f;
+        // Stop a one-wheel failure inside the controller, before the chassis can
+        // pivot far enough for task-level post-validation to be useful.
+        const float maxWheelDifference = 35.0f;
 
         cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
         // Capped at the cruise speed rather than MAX_PWM. The approach only ever
         // has to come down from cruise, so there is nothing for it to do up there.
         distancePid.setLimits(intLimit, (float)cruisePWM);
 
+        // Start every invocation with fresh odometry, including failures that
+        // happen before the motors are enabled.  The task-level partial-move
+        // accumulator must never count a previous segment twice.
         drive.resetEnc();
-        imu.update();
+        if (!imu.verifyConfiguration()) {
+            drive.stop();
+            return MOTION_PREFLIGHT_FAULT;
+        }
+        if (!imu.update()) {
+            drive.stop();
+            return MOTION_PREFLIGHT_FAULT;
+        }
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        if (targetDistance > 0 && lidar.latestFront() == LidarArray::NO_READING) {
+            drive.stop();
+            return MOTION_PREFLIGHT_FAULT;
+        }
+
+        // Hold the persistent maze-frame heading, not a slightly skewed heading
+        // sampled after the previous turn.
+        const float baseHeading = targetGlobalHeading;
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
@@ -695,6 +741,9 @@ public:
 
         unsigned long previousLoopTime = millis();
         unsigned long timeWhenInitiallySettled = 0;
+        const unsigned long motionStart = previousLoopTime;
+        unsigned long lastProgressTime = previousLoopTime;
+        float lastProgressDistance = 0.0f;
 
         while (true) {
             unsigned long currentTime = millis();
@@ -702,10 +751,77 @@ public:
                 continue;
             }
             previousLoopTime = currentTime;
-            imu.update();
+            if (!imu.update()) {
+                drive.stop();
+                return MOTION_POSE_UNCERTAIN;
+            }
             lidar.poll();
 
             const float travelled = drive.getCurrAvgDist();
+            const float leftTravelled = drive.getLeftWheelDist();
+            const float rightTravelled = drive.getRightWheelDist();
+
+            if (!isfinite(travelled) || !isfinite(leftTravelled) ||
+                !isfinite(rightTravelled) || !isfinite(getRot())) {
+                drive.stop();
+                return MOTION_POSE_UNCERTAIN;
+            }
+
+            if (abs(travelled - lastProgressDistance) >= minimumProgress) {
+                lastProgressDistance = travelled;
+                lastProgressTime = currentTime;
+            }
+
+            if (currentTime - motionStart > motionTimeout) {
+                drive.stop();
+                return MOTION_TIMED_OUT;
+            }
+
+            if (abs(leftTravelled - rightTravelled) > maxWheelDifference) {
+                drive.stop();
+                return MOTION_STALLED;
+            }
+            if (abs(Imu::normaliseAngle(getRot() - baseHeading)) > 25.0f) {
+                drive.stop();
+                return MOTION_STALLED;
+            }
+
+            if (targetDistance > 0 &&
+                lidar.latestFront() == LidarArray::NO_READING) {
+                drive.stop();
+                // AI-assisted coast capture: PWM=0 is a command, not proof that
+                // the chassis is already stationary. A segmented retry may reuse
+                // this odometry only after both encoder totals have stayed fixed;
+                // otherwise resetting them on the next segment would erase coast.
+                float stableLeft = drive.getLeftWheelDist();
+                float stableRight = drive.getRightWheelDist();
+                unsigned long stableSince = millis();
+                const unsigned long settleStart = stableSince;
+                while (millis() - settleStart <= 600) {
+                    delay(10);
+                    if (!imu.update()) return MOTION_POSE_UNCERTAIN;
+                    const float settledLeft = drive.getLeftWheelDist();
+                    const float settledRight = drive.getRightWheelDist();
+                    if (!isfinite(settledLeft) || !isfinite(settledRight) ||
+                        !isfinite(getRot()) ||
+                        abs(Imu::normaliseAngle(getRot() - baseHeading)) > 25.0f) {
+                        return MOTION_POSE_UNCERTAIN;
+                    }
+                    // Compare with an unchanged stability-window anchor, not the
+                    // previous 10 ms sample: slow continuous coast must not look
+                    // stationary merely because every individual increment is small.
+                    if (abs(settledLeft - stableLeft) >= 0.7f ||
+                        abs(settledRight - stableRight) >= 0.7f) {
+                        stableSince = millis();
+                        stableLeft = settledLeft;
+                        stableRight = settledRight;
+                    }
+                    if (millis() - stableSince >= 120) {
+                        return MOTION_LIDAR_FAULT;
+                    }
+                }
+                return MOTION_POSE_UNCERTAIN;
+            }
 
             const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
             if (newFrontStamp != frontStamp) {
@@ -734,6 +850,11 @@ public:
             const float toGo = frontLimited ? remaining : abs(distanceError);
 
             const bool inDistDeadband = toGo <= distanceDeadband;
+
+            if (!inDistDeadband && currentTime - lastProgressTime > progressTimeout) {
+                drive.stop();
+                return MOTION_STALLED;
+            }
 
             if (targetDistance > 0 && !inDistDeadband &&
                 currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
@@ -837,14 +958,11 @@ public:
 
                 if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
                     drive.stop();
-
-                    if (frontLimited) {
-                        Serial.print(F("front wall: stopped "));
-                        Serial.print(distanceError);
-                        Serial.println(F("mm short"));
-                    }
-
-                    return;
+                    // A normal far wall can limit the approach but still leave the
+                    // robot at the requested cell centre. Only a genuinely short
+                    // move is reported as blocked.
+                    return abs(distanceError) <= 12.0f
+                        ? MOTION_OK : MOTION_FRONT_BLOCKED;
                 }
             } else {
                 timeWhenInitiallySettled = 0;
@@ -1036,7 +1154,7 @@ public:
     // run - the same bookkeeping turnByAngle does.
     //
     // maxTurningPWM should always be +ve; angleToTurn may be either sign.
-    void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
+    MotionResult turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
         const float turnKp = 2.0f;
         // Left at zero deliberately. The decel ramp below already does the
         // damping a D term would, and an untuned D on a 10ms gyro sample is more
@@ -1052,6 +1170,8 @@ public:
 
         const unsigned long loopTime = 10;
         const unsigned long timeBeforeConsideredSettled = 200;
+        const unsigned long motionTimeout = 5000;
+        const unsigned long progressTimeout = 1000;
 
         // PIDController subtracts raw floats, which cannot express an angle that
         // wraps at +/-180. Feeding it the already-wrapped error against a zero
@@ -1060,15 +1180,33 @@ public:
         turnPid.zeroAndSetTarget(0.0f, 0.0f);
         turnPid.setLimits(0.0f, (float)MAX_PWM);
 
-        imu.resetHeading();
-
-        imu.update();
-        const float startHeading = imu.getAngleZCustom();
-        targetGlobalHeading = Imu::normaliseAngle(imu.getAngleZCustom() + angleToTurn);
+        // Reset before any fallible precondition so a preflight result always
+        // carries zero odometry for this invocation.
+        drive.resetEnc();
+        if (!imu.verifyConfiguration()) {
+            drive.stop();
+            return MOTION_PREFLIGHT_FAULT;
+        }
+        if (!imu.update()) {
+            drive.stop();
+            return MOTION_PREFLIGHT_FAULT;
+        }
+        // AI-assisted absolute-heading control: retain one yaw frame for the full
+        // maze run so small turn errors are corrected rather than accumulated.
+        // The target is committed only after preflight succeeds. A safe preflight
+        // retry therefore repeats the requested +/-90 degrees, while any failure
+        // after this point is treated as pose-uncertain and is never retried.
+        targetGlobalHeading = Imu::normaliseAngle(targetGlobalHeading + angleToTurn);
+        const float startHeading = getRot();
         maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
 
         unsigned long previousLoopTime = millis();
         unsigned long timeWhenInitiallySettled = 0;
+        const unsigned long motionStart = previousLoopTime;
+        unsigned long lastProgressTime = previousLoopTime;
+        float lastProgressHeading = startHeading;
+        float encoderDifferentialAtLastYaw = 0.0f;
+        unsigned long encoderWithoutYawSince = 0;
 
         while (true) {
             unsigned long currentTime = millis();
@@ -1076,11 +1214,50 @@ public:
                 continue;
             }
             previousLoopTime = currentTime;
-            imu.update();
+            if (!imu.update()) {
+                drive.stop();
+                return MOTION_POSE_UNCERTAIN;
+            }
 
-            const float angleError = Imu::normaliseAngle(targetGlobalHeading - imu.getAngleZCustom());
-            const float turnedSoFar = abs(Imu::normaliseAngle(imu.getAngleZCustom() - startHeading));
+            const float heading = getRot();
+            const float leftTravelled = drive.getLeftWheelDist();
+            const float rightTravelled = drive.getRightWheelDist();
+            if (!isfinite(heading) || !isfinite(leftTravelled) ||
+                !isfinite(rightTravelled) ||
+                abs(leftTravelled + rightTravelled) > 25.0f) {
+                drive.stop();
+                return isfinite(heading) ? MOTION_STALLED : MOTION_POSE_UNCERTAIN;
+            }
+
+            const float encoderDifferential = abs(leftTravelled - rightTravelled);
+            if (encoderDifferential - encoderDifferentialAtLastYaw >= 3.0f) {
+                if (abs(Imu::normaliseAngle(heading - lastProgressHeading)) < 0.5f) {
+                    if (encoderWithoutYawSince == 0) encoderWithoutYawSince = currentTime;
+                    if (currentTime - encoderWithoutYawSince > 150) {
+                        drive.stop();
+                        return MOTION_POSE_UNCERTAIN;
+                    }
+                } else {
+                    encoderDifferentialAtLastYaw = encoderDifferential;
+                    encoderWithoutYawSince = 0;
+                }
+            }
+
+            const float angleError = Imu::normaliseAngle(targetGlobalHeading - heading);
+            const float turnedSoFar = abs(Imu::normaliseAngle(heading - startHeading));
             const bool inDeadband = abs(angleError) <= angleDeadband;
+
+            if (abs(Imu::normaliseAngle(heading - lastProgressHeading)) >= 0.5f) {
+                lastProgressHeading = heading;
+                lastProgressTime = currentTime;
+            }
+
+            if (currentTime - motionStart > motionTimeout ||
+                (!inDeadband && currentTime - lastProgressTime > progressTimeout)) {
+                drive.stop();
+                return currentTime - motionStart > motionTimeout
+                    ? MOTION_TIMED_OUT : MOTION_STALLED;
+            }
 
             float turningPWM = turnPid.compute(-angleError);
 
@@ -1105,7 +1282,10 @@ public:
 
                 if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
                     drive.stop();
-                    return;
+                    if (abs(drive.getLeftWheelDist() + drive.getRightWheelDist()) > 12.0f) {
+                        return MOTION_STALLED;
+                    }
+                    return MOTION_OK;
                 }
             } else {
                 timeWhenInitiallySettled = 0;

@@ -1,15 +1,25 @@
 #pragma once
 
+// Generative-AI assistance notice: the known-edge traversal mode marked
+// "AI-assisted" was written with OpenAI Codex and reviewed by the team.
+
 #include <Arduino.h>
 #include "task4_code/MazeMap.hpp"
 
 constexpr uint8_t INFINITE = 0xFF;
 
+enum TraversalMode : uint8_t {
+    ALLOW_UNKNOWN,
+    KNOWN_ONLY,
+    OPTIMISTIC_UNCHALLENGED_WALLS
+};
+
 class MazeAutonomousPlanner {
     public:
         // Flood fill algorithm, returns false if not a valid target cell. Starts at target and 
         // spreads for the entire maze to find the distance from target to each cell
-        bool floodFill(MazeMap& maze, int targetRow, int targetCol) {
+        bool floodFill(MazeMap& maze, int targetRow, int targetCol,
+                       TraversalMode mode = ALLOW_UNKNOWN) {
             for (uint8_t i = 0; i < NUM_CELLS; i++) {
                 distance[i] = INFINITE;
             }
@@ -44,7 +54,10 @@ class MazeAutonomousPlanner {
                         continue;
                     }
                     WallState currWall = maze.getWallState(row, col, currDirection);
-                    if (currWall == WALL) {
+                    // AI-assisted shortest-run proof: KNOWN_ONLY never plans a
+                    // competition path through an edge that has not been observed.
+                    if (!canTraverse(maze, row, col, currDirection,
+                                     currWall, mode)) {
                         continue;
                     }
 
@@ -72,7 +85,9 @@ class MazeAutonomousPlanner {
         // should move into for the best direction to move next for the smallest path.
         // Returns false if target can't be reached from current cell, micromouse already 
         // at target, or no valid neighbour
-        bool getBestDirectionToMove(MazeMap& maze, Pose& pose, Direction& bestDirection) {
+        bool getBestDirectionToMove(MazeMap& maze, Pose& pose,
+                                    Direction& bestDirection,
+                                    TraversalMode mode = ALLOW_UNKNOWN) {
             // Gets distance array entry for curr cell pose
             uint8_t currDist = getDistance(pose.row, pose.col);
 
@@ -93,7 +108,8 @@ class MazeAutonomousPlanner {
 
                 WallState currWall = maze.getWallState(pose.row, pose.col, currDirection);
                 // Ignores curr direction if moving that way hits a wall
-                if (currWall == WALL) {
+                if (!canTraverse(maze, pose.row, pose.col, currDirection,
+                                 currWall, mode)) {
                     continue;
                 } 
                 
@@ -201,6 +217,15 @@ class MazeAutonomousPlanner {
         }
 
     private:
+        static bool canTraverse(MazeMap& maze, int row, int col,
+                                Direction direction, WallState wall,
+                                TraversalMode mode) {
+            if (wall == NO_WALL) return true;
+            if (wall == UNKNOWN) return mode != KNOWN_ONLY;
+            return mode == OPTIMISTIC_UNCHALLENGED_WALLS &&
+                   !maze.wallWasChallenged(row, col, direction);
+        }
+
         uint8_t distance[NUM_CELLS];
         uint8_t queue[NUM_CELLS];
 

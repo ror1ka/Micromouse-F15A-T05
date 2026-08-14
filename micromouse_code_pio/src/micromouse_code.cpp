@@ -1,143 +1,127 @@
-// MTRN3100 Micromouse Code PlatformIO
+// MTRN3100 Micromouse Task 4.3 firmware
+//
+// Generative-AI assistance notice: the bounded hardware setup and retrying
+// Task-4.3 mission supervisor marked "AI-assisted" were written with OpenAI
+// Codex and reviewed by the team.
+
 #include <Arduino.h>
 #include <Wire.h>
 
 #include "Micromouse.hpp"
-#include "SelfTest.hpp"
-#include "task3_code/task3ChainingMovements.hpp"
-#include "task3_code/task3DrivingAndStopping.hpp"
-#include "task3_code/task3Turning.hpp"
-#include "task4_code/DisplayMazeOled.hpp"
-#include"task4_code/task4_2ChainingMovements.hpp"
-#include "task4_code/maze_route.h"
 #include "task4_code/task4AutonomousMapping.hpp"
-#include"task4_code/MazeAutonomousPlanner.hpp"
 
-constexpr unsigned long BAUD = 115200;
+constexpr uint32_t I2C_TIMEOUT_US = 5000;
 
-// Used by travelDistance only; the PID routines carry their own gains. Passed as
-// a temporary rather than kept as a global - Micromouse takes it by value and
-// Movement keeps the only copy that is ever used, so a global here would be 64
-// bytes of RAM that nothing reads.
 Micromouse mouse(PIDController(2.0, 1.0, 2.0));
-
-// TASK 4.3 STUFF
 MazeMap maze;
 MazeAutonomousPlanner planner;
 
-Pose startPose = {
-    4,
-    7,
-    EAST
-};
+// Task 4.3 permits only these assessment inputs to be hard-coded. Confirm them
+// immediately before marking if the demonstrator changes the start or goal.
+const Pose startPose = {4, 7, EAST};
+constexpr int TARGET_ROW = 2;
+constexpr int TARGET_COL = 5;
 
-// Current estimated robot pose.
-// At the beginning this is identical to the start pose.
 Pose pose = startPose;
-
-
-// Makes absolutely sure Task 4.3 only runs once.
-bool task43HasRun = false;
-// END 4.3
-
+bool missionComplete = false;
+bool persistentFaultStop = false;
+uint8_t lastVisitedCount = 0;
+uint8_t lastMissionPhase = 0;
+uint16_t lastEvidenceProgress = 0;
+uint8_t bestPhaseDistance = INFINITE;
+uint8_t missionRetriesWithoutProgress = 0;
 
 void setup() {
-  Serial.begin(BAUD);
-  Wire.begin();
+    Wire.begin();
 
-  mouse.setupOled();
+    // AI-assisted boot liveness: install the bus timeout before the first OLED,
+    // IMU, or LiDAR transaction, and never leave a device routine with motors on.
+    Wire.setWireTimeout(I2C_TIMEOUT_US, true);
+    mouse.stop();
 
-  // setupIMU blocks until the MPU6050 answers, and spends a second calibrating
-  // its offsets - the robot must be still and level for that.
-  mouse.setupIMU();
-  mouse.setupLidar();
-  mouse.initialiseGlobalHeading();
+    while (!mouse.setupIMU()) {
+        mouse.stop();
+        delay(250);
+    }
 
-  ///// OLED FIX TEST
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  delay(1000);
+    while (!mouse.setupLidar()) {
+        mouse.stop();
+        delay(250);
+    }
+    // Initialise the display after another responding device has demonstrated
+    // that the shared bus is usable; this also retries any transient boot glitch.
+    while (!mouse.setupOled()) {
+        mouse.stop();
+        delay(250);
+    }
+    while (!mouse.initialiseGlobalHeading()) {
+        mouse.stop();
+        delay(250);
+    }
+    delay(1000);
 }
 
-// Set to true to run the hardware bring-up check instead of the maze run.
-// Needs the serial monitor open, since it waits for a keypress between stages.
-constexpr bool RUN_SELF_TEST = false;
-
-constexpr bool RUN_OLED_MOTION_TEST = true;
-
 void loop() {
-  // if (RUN_OLED_MOTION_TEST) {
-  //   mouse.driveDistanceProfiled(180, 150);
-  //   mouse.turnByAngleProfiled(90, 70);
-  //   // runOledMotionTest(mouse);
-  //   while (true) {}
-  // }
+    if (missionComplete || persistentFaultStop) {
+        mouse.stop();
+        delay(250);
+        return;
+    }
 
-  // if (RUN_SELF_TEST) {
-  //   runSelfTest(mouse);
-  //   while (true) {}
-  // }
+    if (task43LocalisationLost) {
+        mouse.stop();
+        delay(250);
+        return;
+    }
 
-  ////////////// TESTING OLED
-  // MazeMap maze;
+    // AI-assisted mission liveness: a transient sensor/controller failure no
+    // longer sets a one-shot latch and parks forever. The map and verified pose
+    // remain in RAM, both sensor subsystems recover while stopped, and the
+    // incomplete phase is attempted again.
+    if (runTask4_3(mouse, maze, planner, pose, startPose,
+                   TARGET_ROW, TARGET_COL)) {
+        missionComplete = true;
+        mouse.stop();
+        return;
+    }
 
-  // // Pretend the robot is currently at row 4, column 4, facing north
-  // Pose pose = {4, 4, NORTH};
+    mouse.stop();
+    if (task43LocalisationLost) {
+        delay(250);
+        return;
+    }
+    uint8_t phaseDistance = INFINITE;
+    if (task43MissionPhase == 2 &&
+        planner.floodFill(maze, startPose.row, startPose.col, KNOWN_ONLY)) {
+        phaseDistance = planner.getDistance(pose.row, pose.col);
+    } else if (task43MissionPhase >= 4 &&
+               planner.floodFill(maze, TARGET_ROW, TARGET_COL, KNOWN_ONLY)) {
+        phaseDistance = planner.getDistance(pose.row, pose.col);
+    }
+    const bool phaseAdvanced = task43MissionPhase > lastMissionPhase;
+    if (maze.getNumVisited() > lastVisitedCount || phaseAdvanced ||
+        task43EvidenceProgress != lastEvidenceProgress ||
+        phaseDistance < bestPhaseDistance) {
+        lastVisitedCount = maze.getNumVisited();
+        lastMissionPhase = task43MissionPhase;
+        lastEvidenceProgress = task43EvidenceProgress;
+        bestPhaseDistance = phaseDistance;
+        missionRetriesWithoutProgress = 0;
+    } else if (missionRetriesWithoutProgress < 10) {
+        missionRetriesWithoutProgress++;
+    }
 
-  // // Pretend these four cells have already been visited
-  // maze.setAsVisited(4, 4);
-  // maze.setAsVisited(4, 5);
-  // maze.setAsVisited(5, 4);
-  // maze.setAsVisited(5, 5);
+    // Count only monotonic mission progress: new cells, a completed phase, or a
+    // smaller known-path distance during return/scored navigation. Arbitrary
+    // revisit shuttles cannot keep the retry budget alive forever.
+    if (missionRetriesWithoutProgress >= 10) {
+        persistentFaultStop = true;
+        delay(250);
+        return;
+    }
 
-  // // Add some fake walls so we can check all four wall directions
-  // maze.setWallState(4, 4, NORTH, WALL);
-  // maze.setWallState(4, 4, WEST, WALL);
-  // maze.setWallState(4, 4, EAST, WALL);
-  // maze.setWallState(4, 4, SOUTH, NO_WALL);
-  
-  // maze.setWallState(4, 5, NORTH, WALL);
-  // maze.setWallState(4, 5, EAST, WALL);
-
-  // maze.setWallState(5, 4, WEST, WALL);
-  // maze.setWallState(5, 4, SOUTH, WALL);
-
-  // maze.setWallState(5, 5, EAST, WALL);
-  // maze.setWallState(5, 5, SOUTH, WALL);
-
-  //drawMazeOled(mouse, maze, pose);
-
-  ///// TESTING 43
- // Never run Task 4.3 more than once.
-  if (task43HasRun) {
-      return;
-  }
-
-  task43HasRun = true;
-  bool success = runTask4_3(
-      mouse,
-      maze,
-      planner,
-      pose,
-      startPose,
-      2,
-      5
-  );
-  
-  /////////////
-
-  // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
-  // chainMovement(mouse, "lfrffffffrflf");
- //chainMission(mouse, MISSION, NUM_COMMANDS);
-  // mouse.printLidar();
-
-  // Other task 3 routines, for when you want to test one on its own:
-  //   task3_Tracking(mouse, 116, 100);   // drive straight, constant speed
-  //   drivingAndStopping(mouse);         // creep to 100mm off the front wall
-  //   Task3_Turning(mouse);              // turn right, then hold that heading
-  //   mouse.driveDistanceStraight(360, 100);
-  //   mouse.turnByAngle(-90, 70);
-
-  // The run only happens once, so park here rather than repeating it.
-  while (true) {}
+    mouse.recoverIMU();
+    mouse.recoverLidar();
+    if (!mouse.oledHealthy()) mouse.setupOled();
+    delay(250);
 }
