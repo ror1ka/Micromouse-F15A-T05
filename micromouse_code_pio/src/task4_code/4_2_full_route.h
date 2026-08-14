@@ -7,7 +7,7 @@ struct Command {
     float value;
 };
 
-constexpr int NUM_COMMANDS = 25;
+constexpr int NUM_COMMANDS = 23;
 constexpr Command MISSION[NUM_COMMANDS] = {
     {'l', 0.0},
     {'f', 0.0},
@@ -25,11 +25,9 @@ constexpr Command MISSION[NUM_COMMANDS] = {
     {'D', 414.6},
     {'T', 13.1},
     {'D', 37.1},
-    {'T', 19.7},
-    {'D', 58.6},
-    {'T', 47.5},
-    {'D', 1.8},
-    {'T', 90.0},
+    {'T', 20.9},
+    {'D', 59.8},
+    {'T', -43.7},
     {'f', 0.0},
     {'r', 0.0},
     {'f', 0.0},
