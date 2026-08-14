@@ -10,5 +10,5 @@ struct WaypointCmd {
 
 constexpr int NUM_WAYPOINTS = 4;
 constexpr WaypointCmd OBSTACLE_ROUTE[NUM_WAYPOINTS] = {
-    {54.9, 272.9}, {-50.1, 190.7}, {83.7, 269.4}, {45.9, 94.7}
+    {54.9, 324.0}, {-50.1, 226.5}, {83.7, 319.9}, {45.9, 112.5}
 };
