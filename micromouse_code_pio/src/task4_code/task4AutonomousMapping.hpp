@@ -265,7 +265,7 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     }
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
-    mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+    mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
 
     ////// IMU ONLY CODE
     // In the known open/post region, side-LiDAR readings can be misleading.

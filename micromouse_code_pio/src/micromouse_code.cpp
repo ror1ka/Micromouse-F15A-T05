@@ -110,15 +110,18 @@ void loop() {
   // }
 
   // task43HasRun = true;
-  //  runTask4_3(
-  //     mouse,
-  //     maze,
-  //     planner,
-  //     pose,
-  //     startPose,
-  //     7,
-  //     7
-  // );
+  runTask4_3(
+      mouse,
+      maze,
+      planner,
+      pose,
+      startPose,
+      7,
+      7
+  );
+  while(true) {
+
+  }
 
   mouse.printLidarToOled();
 
