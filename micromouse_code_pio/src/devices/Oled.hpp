@@ -39,6 +39,24 @@ public:
         } while (u8g2.nextPage());
     }
 
+    void printLidar(int f, int l, int r) {
+        u8g2.setFont(u8g2_font_ncenB10_tr);
+        u8g2.firstPage();
+        char front[64];
+        char left[64];
+        char right[64];
+
+        snprintf(front, sizeof(front), "Front Lidar: %d", f);
+        snprintf(left, sizeof(left), "Left Lidar: %d", l);
+        snprintf(right, sizeof(right), "Rront Lidar: %d", r);
+
+        do {
+            u8g2.drawStr(0, 10, front);
+            u8g2.drawStr(0, 30, left);
+            u8g2.drawStr(0, 50, right);
+        } while (u8g2.nextPage());
+    }
+
     U8G2_SSD1306_128X64_NONAME_1_HW_I2C& getDisplay() {
       return u8g2;
     }

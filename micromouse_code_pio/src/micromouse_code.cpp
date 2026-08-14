@@ -105,21 +105,23 @@ void loop() {
 
   ///// TESTING 43
  // Never run Task 4.3 more than once.
-  if (task43HasRun) {
-      return;
-  }
+  // if (task43HasRun) {
+  //     return;
+  // }
 
-  task43HasRun = true;
-   runTask4_3(
-      mouse,
-      maze,
-      planner,
-      pose,
-      startPose,
-      7,
-      7
-  );
-  
+  // task43HasRun = true;
+  //  runTask4_3(
+  //     mouse,
+  //     maze,
+  //     planner,
+  //     pose,
+  //     startPose,
+  //     7,
+  //     7
+  // );
+
+  mouse.printLidarToOled();
+
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
@@ -135,5 +137,5 @@ void loop() {
   //   mouse.turnByAngle(-90, 70);
 
   // The run only happens once, so park here rather than repeating it.
-  while (true) {}
+  // while (true) {}
 }
