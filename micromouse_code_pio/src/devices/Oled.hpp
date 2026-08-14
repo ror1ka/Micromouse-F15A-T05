@@ -16,8 +16,6 @@ public:
 
     void setup() {
         u8g2.begin();
-
-        Serial.println("OLED is Setup!");
     }
 
     void clear() {
@@ -34,7 +32,6 @@ public:
     // }
 
     void printMessage(int x, int y, const char* text) {
-        Serial.println("OLED is Printing message");
         u8g2.setFont(u8g2_font_ncenB10_tr);
         u8g2.firstPage();
         do {

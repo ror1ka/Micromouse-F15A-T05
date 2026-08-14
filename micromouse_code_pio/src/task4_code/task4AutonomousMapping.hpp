@@ -306,11 +306,7 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
             return false;
         }
 
-        // A turn costs about 100 bytes of stack more than a straight move, so
-        // this is the reading that matters - the first turn of a run is where
-        // the old build ran out and overwrote the OLED's draw colour.
         MoveResult resultFromMovingForward = moveToNeighbour(mouse, maze, pose, nextDirection);
-        reportStack(F("after move"));
 
         if (resultFromMovingForward == MOVE_SUCCESS || resultFromMovingForward == MOVE_BLOCKED || resultFromMovingForward == MOVE_SENSOR_ERROR) {
             continue;
