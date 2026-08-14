@@ -78,6 +78,13 @@ public:
     motion.driveDistanceCruiseNoLidar(targetDistance, cruisePWM);
   }
 
+  // As driveDistanceCruiseLidar, but a wall the front LiDAR finds within
+  // FRONT_SEEK_WINDOW, not the odometry, decides where the move ends - the robot
+  // closes to FRONT_STOP_DISTANCE off it even if that is past `targetDistance`.
+  void driveDistanceCruiseFrontSeek(float targetDistance, int cruisePWM) {
+    motion.driveDistanceCruiseFrontSeek(targetDistance, cruisePWM);
+  }
+
   //////// Sensors ////////
   // Blocking reads. Fine between moves, too slow inside a control loop.
   int getLidarDistanceFront() { return lidarArray.readFront(); }
