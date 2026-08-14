@@ -276,7 +276,7 @@ inline void testClosedLoop(Micromouse& mouse) {
   Serial.println(F("  driveDistanceStraight(200, 120)"));
   mouse.updateMpu();
   const float headingBefore = mouse.getRot();
-  mouse.driveDistanceStraight(200, 120);
+
   mouse.updateMpu();
 
   const float travelled = mouse.getCurrAvgDist();

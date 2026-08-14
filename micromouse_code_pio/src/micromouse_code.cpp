@@ -3,7 +3,7 @@
 #include <Wire.h>
 
 #include "Micromouse.hpp"
-#include "SelfTest.hpp"
+
 #include "task3_code/task3ChainingMovements.hpp"
 #include "task3_code/task3DrivingAndStopping.hpp"
 #include "task3_code/task3Turning.hpp"
@@ -26,8 +26,8 @@ MazeMap maze;
 MazeAutonomousPlanner planner;
 
 Pose startPose = {
-    4,
-    7,
+    1,
+    1,
     EAST
 };
 
@@ -60,10 +60,6 @@ void setup() {
 }
 
 // Set to true to run the hardware bring-up check instead of the maze run.
-// Needs the serial monitor open, since it waits for a keypress between stages.
-constexpr bool RUN_SELF_TEST = false;
-
-constexpr bool RUN_OLED_MOTION_TEST = true;
 
 void loop() {
   // if (RUN_OLED_MOTION_TEST) {
@@ -114,14 +110,14 @@ void loop() {
   }
 
   task43HasRun = true;
-  bool success = runTask4_3(
+   runTask4_3(
       mouse,
       maze,
       planner,
       pose,
       startPose,
-      2,
-      5
+      7,
+      7
   );
   
   /////////////

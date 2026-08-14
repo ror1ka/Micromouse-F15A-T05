@@ -50,9 +50,7 @@ public:
   void turnRight(int16_t speed, float target, float err) { motion.turnRight(speed, target, err); }
   void turnAngle(int16_t speed, float angle) { motion.turnAngle(speed, angle); }
   void travelDistance(uint16_t dist, int16_t speed) { motion.travelDistance(dist, speed); }
-  void driveDistanceStraight(float targetDistance, int maxPWM) {
-    motion.driveDistanceStraight(targetDistance, maxPWM);
-  }
+  
   void turnByAngle(float angleToTurn, int maxTurningPWM) {
     motion.turnByAngle(angleToTurn, maxTurningPWM);
   }

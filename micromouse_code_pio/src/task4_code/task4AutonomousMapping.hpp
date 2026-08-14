@@ -261,7 +261,7 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     if (task43IsImuOnlyCell(pose.row, pose.col)) {
         mouse.driveDistanceCruiseNoLidar(180.0f, MAPPING_DRIVE_PWM);
     } else {
-        mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+        mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
     }
     ///// END OF IMU ONLY CODE
 
