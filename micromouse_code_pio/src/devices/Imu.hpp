@@ -63,6 +63,17 @@ public:
         customAngleZ = 0.0;
     }
 
+    void fullReset() {
+        // Delay to first ensures its in a position of stopping
+        delay(500);
+
+        // Start full reseting
+        
+        mpu.calcOffsets();
+        resetHeading();
+        lastUpdateTime = millis();
+    }
+
     // Current yaw in degrees. Free-running: it is not wrapped to +/-180.
     float getAngleZ() {
         return mpu.getAngleZ();

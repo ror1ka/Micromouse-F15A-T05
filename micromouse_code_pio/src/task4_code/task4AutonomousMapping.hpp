@@ -52,6 +52,20 @@ enum MoveResult : uint8_t {
 // }
 ////// END OF IMU ONLY CODE
 
+///// ADDED RESET IMU CODE
+inline bool currentCellHasThreeWalls(MazeMap& maze, const Pose& pose) {
+    uint8_t wallCount = 0;
+
+    if (maze.getWallState(pose.row, pose.col, NORTH) == WALL) wallCount++;
+    if (maze.getWallState(pose.row, pose.col, EAST)  == WALL) wallCount++;
+    if (maze.getWallState(pose.row, pose.col, SOUTH) == WALL) wallCount++;
+    if (maze.getWallState(pose.row, pose.col, WEST)  == WALL) wallCount++;
+
+    return wallCount == 3;
+}
+///// ENDED REST IMU CODE
+
+
 // Returns the absolute heading (e.g north) of turning right from the current heading
 inline Direction rightDirection(Direction currDirection) {
     if (currDirection == NORTH) {
@@ -251,7 +265,7 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     }
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
-    mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+    mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
 
     ////// IMU ONLY CODE
     // In the known open/post region, side-LiDAR readings can be misleading.
@@ -280,11 +294,22 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
         if (!maze.hasBeenVisited(pose.row, pose.col)) {
             // Senses current cell if it hasn't been visited already
             if (!senseCurrentCell(mouse, maze, pose)) {
-                // Lidar error 
+                // Lidar error
                 delay(SETTLE_TIME);
                 continue;
                 // return false;
             }
+
+            //////////////////////// ADDED IMU RESET CODE
+            // A 3-wall cell is a useful stationary point to remove accumulated
+            // IMU drift and recalculate the gyro offsets.
+            if (currentCellHasThreeWalls(maze, pose)) {
+                mouse.drive().stop();
+                mouse.imu().fullReset();
+
+                // Serial.println(F("3-wall cell: IMU heading reset"));
+            }
+            //// END ADDED IMU RESET CODE
         }
 
         drawMazeOled(mouse, maze, pose);

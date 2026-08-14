@@ -90,7 +90,7 @@ constexpr float FRONT_STOP_DISTANCE = 55.0f;
 // close enough that the wall, not the odometry, decides where the move ends -
 // see driveDistanceCruiseFrontSeek. Anything beyond this is too far to be the
 // wall of the cell being entered, so the commanded distance still owns the move.
-constexpr float FRONT_SEEK_WINDOW = 90.0f;
+constexpr float FRONT_SEEK_WINDOW = 105.0f;
 // Furthest a front-seeking move may run past the distance it was asked for, in
 // mm. A stale or bogus reading can only ever cost this much overshoot.
 constexpr float MAX_FRONT_SEEK_OVERSHOOT = 60.0f;
