@@ -311,11 +311,6 @@ public:
         const float baseHeading = getRot();
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
-        // Gets the robot over the seam in the maze floor, and keeps the wheel
-        // slip it causes out of the odometry. See SeamGuard.
-        SeamGuard seam;
-        seamBegin(seam, targetDistance);
-
         unsigned long previousLoopTime = millis();
         unsigned long timeWhenInitiallySettled = 0;
 
@@ -328,15 +323,7 @@ public:
             previousLoopTime = currentTime;
             imu.update();
 
-            if (!seamTick(seam, currentTime)) {
-                return;
-            }
-
-            // Odometry with any slip over the floor seam taken back out, so a
-            // wheel spinning against the lip is not credited as travel. Equal to
-            // getCurrAvgDist() until a stall actually happens.
-            const float travelled = seam.distance();
-
+            const float travelled = drive.getCurrAvgDist();
             const float distanceError = targetDistance - travelled;
             const float headingError = Imu::normaliseAngle(baseHeading - getRot());
 
@@ -376,18 +363,7 @@ public:
                 headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
             }
 
-            // The guard has the motors. Both wheels get the same PWM: the caps
-            // that could not climb the lip are out of the way for the duration,
-            // and steering while one wheel is still against it would only pivot
-            // the robot along the seam instead of over it.
-            if (!inDistDeadband && seam.climbCommand() != 0.0f) {
-                distancePWM = seam.climbCommand();
-                headingPWM = 0;
-            }
-
             drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
-
-            seam.commanded(distancePWM, inDistDeadband);
 
             if (inDistDeadband && inAngleDeadband) {
                 if (timeWhenInitiallySettled == 0) {
@@ -467,11 +443,6 @@ public:
         const float baseHeading = getRot();
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
-        // Gets the robot over the seam in the maze floor, and keeps the wheel
-        // slip it causes out of the odometry. See SeamGuard.
-        SeamGuard seam;
-        seamBegin(seam, targetDistance);
-
         // Offset applied to baseHeading, in degrees. +ve steers left.
         float wallTrim = 0.0f;
         float previousOffset = 0.0f;
@@ -497,14 +468,7 @@ public:
             // Advances one measurement. Costs a register read or two, no waiting.
             lidar.poll();
 
-            if (!seamTick(seam, currentTime)) {
-                return;
-            }
-
-            // Odometry with any slip over the floor seam taken back out, so a
-            // wheel spinning against the lip is not credited as travel. Equal to
-            // getCurrAvgDist() until a stall actually happens.
-            const float travelled = seam.distance();
+            const float travelled = drive.getCurrAvgDist();
 
             // A new front measurement describes where the robot was when the
             // sensor fired, so pin the odometry to it and age it from there.
@@ -611,18 +575,7 @@ public:
                 headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
             }
 
-            // The guard has the motors. Both wheels get the same PWM: the caps
-            // that could not climb the lip are out of the way for the duration,
-            // and steering while one wheel is still against it would only pivot
-            // the robot along the seam instead of over it.
-            if (!inDistDeadband && seam.climbCommand() != 0.0f) {
-                distancePWM = seam.climbCommand();
-                headingPWM = 0;
-            }
-
             drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
-
-            seam.commanded(distancePWM, inDistDeadband);
 
             if (inDistDeadband && inAngleDeadband) {
                 if (timeWhenInitiallySettled == 0) {
@@ -687,18 +640,8 @@ public:
     // slewed, why it decays out at the end of the move, and why the front reading
     // is aged against odometry. Forward moves only for the trim, same as there.
     //
-    // `useLidar` switches the wall trim off without touching anything else - the
-    // front guard, the heading hold and both phases are the same either way. The
-    // two entry points below are the only callers.
-    //
-    // noinline because this is the one cruise loop in the firmware and it is a
-    // big one. Inlined at every call site the Nano runs out of flash, and it did:
-    // this routine and the near-identical copy of it that used to sit below were
-    // between them most of a kilobyte over the limit.
-    //
     // ONLY PASS A POSITIVE cruisePWM. To go backwards make targetDistance negative.
-    __attribute__((noinline))
-    void driveDistanceCruise(float targetDistance, int cruisePWM, bool useLidar) {
+    void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
         // The gains the other drive routines settled on. Not constructed with any
         // state that matters yet - it is seeded at the handover, below.
         PIDController distancePid(1.2f, 0.0f, 0.25f);
@@ -736,11 +679,6 @@ public:
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
 
-        // Gets the robot over the seam in the maze floor, and keeps the wheel
-        // slip it causes out of the odometry. See SeamGuard.
-        SeamGuard seam;
-        seamBegin(seam, targetDistance);
-
         float wallTrim = 0.0f;
         float previousOffset = 0.0f;
         float offsetRate = 0.0f;
@@ -767,14 +705,7 @@ public:
             imu.update();
             lidar.poll();
 
-            if (!seamTick(seam, currentTime)) {
-                return;
-            }
-
-            // Odometry with any slip over the floor seam taken back out, so a
-            // wheel spinning against the lip is not credited as travel. Equal to
-            // getCurrAvgDist() until a stall actually happens.
-            const float travelled = seam.distance();
+            const float travelled = drive.getCurrAvgDist();
 
             const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
             if (newFrontStamp != frontStamp) {
@@ -804,7 +735,7 @@ public:
 
             const bool inDistDeadband = toGo <= distanceDeadband;
 
-            if (useLidar && targetDistance > 0 && !inDistDeadband &&
+            if (targetDistance > 0 && !inDistDeadband &&
                 currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
                 const float sampleDt = (currentTime - lastWallSample) / 1000.0f;
                 lastWallSample = currentTime;
@@ -897,18 +828,7 @@ public:
                 headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
             }
 
-            // The guard has the motors. Both wheels get the same PWM: the caps
-            // that could not climb the lip are out of the way for the duration,
-            // and steering while one wheel is still against it would only pivot
-            // the robot along the seam instead of over it.
-            if (!inDistDeadband && seam.climbCommand() != 0.0f) {
-                distancePWM = seam.climbCommand();
-                headingPWM = 0;
-            }
-
             drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
-
-            seam.commanded(distancePWM, inDistDeadband);
 
             if (inDistDeadband && inAngleDeadband) {
                 if (timeWhenInitiallySettled == 0) {
@@ -932,20 +852,183 @@ public:
         }
     }
 
-    // The two ways the cruise routine gets used.
-    //
-    // In a corridor the side LiDARs see two parallel walls, so the wall trim is
-    // meaningful and worth having. Crossing the open obstacle zone on arbitrary
-    // headings they are staring at walls and cylinders at oblique angles and the
-    // "offset" they imply is noise - steering on it would drive the robot into
-    // the thing it just measured - so those moves run on the encoders and the
-    // IMU heading hold alone.
-    void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
-        driveDistanceCruise(targetDistance, cruisePWM, true);
-    }
-
+    // Cruise but no lidar
     void driveDistanceCruiseNoLidar(float targetDistance, int cruisePWM) {
-        driveDistanceCruise(targetDistance, cruisePWM, false);
+        // The gains the other drive routines settled on. Not constructed with any
+        // state that matters yet - it is seeded at the handover, below.
+        PIDController distancePid(1.2f, 0.0f, 0.25f);
+        const float headingKp = 2.0f;
+
+        const float distanceDeadband = 3.0f;
+        const float headingDeadband = 1.5f;
+
+        // Where the PID takes over, and how long the cruise takes to come up to
+        // speed. The handover figure is the trapezoid's decel ramp: it is the
+        // distance that version already found was enough to shed cruise speed in.
+        const float handoverDistance = 70.0f;
+        const float softStartDistance = 30.0f;
+
+        const float intLimit = 100.0f;
+        const float maxHeadingCorrection = 45.0f;
+
+     
+
+        const unsigned long loopTime = 10;
+        const unsigned long timeBeforeConsideredSettled = 200;
+
+        cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
+        // Capped at the cruise speed rather than MAX_PWM. The approach only ever
+        // has to come down from cruise, so there is nothing for it to do up there.
+        distancePid.setLimits(intLimit, (float)cruisePWM);
+
+        drive.resetEnc();
+        imu.update();
+        lidar.refreshAll();
+
+        const float baseHeading = getRot();
+        // Whatever resetEnc() left on the clock, so the PID measures from the same
+        // origin as `travelled` when it is seeded partway through the move.
+        const float odometryZero = drive.getCurrAvgDist();
+
+        float wallTrim = 0.0f;
+    
+
+        // False for the cruise phase, true once the PID has been handed the move.
+        // Latched: a front reading that pushes the stopping point back out again
+        // must not drop the robot back into open-loop cruise near a wall.
+        bool handedOver = false;
+
+        unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
+        float travelledAtFrontSample = 0.0f;
+
+        unsigned long previousLoopTime = millis();
+        unsigned long timeWhenInitiallySettled = 0;
+
+        while (true) {
+            unsigned long currentTime = millis();
+            if (currentTime - previousLoopTime < loopTime) {
+                continue;
+            }
+            previousLoopTime = currentTime;
+            imu.update();
+            lidar.poll();
+
+            const float travelled = drive.getCurrAvgDist();
+
+            const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
+            if (newFrontStamp != frontStamp) {
+                frontStamp = newFrontStamp;
+                travelledAtFrontSample = travelled;
+            }
+
+            const float distanceError = targetDistance - travelled;
+
+            float remaining = distanceError;
+            bool frontLimited = false;
+
+            if (targetDistance > 0) {
+                const float frontAllows =
+                    frontTravelLimit() - (travelled - travelledAtFrontSample);
+                if (frontAllows < remaining) {
+                    remaining = frontAllows;
+                    frontLimited = true;
+                }
+            }
+
+            // Distance still to run, as an unsigned quantity so the two phases can
+            // be reasoned about the same way forwards, backwards and into a wall.
+            // Front-limited it stays signed, because stopping short is the point
+            // and there is no undershoot to correct.
+            const float toGo = frontLimited ? remaining : abs(distanceError);
+
+            const bool inDistDeadband = toGo <= distanceDeadband;
+
+            const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
+            const bool inAngleDeadband = abs(headingError) <= headingDeadband;
+
+            // The handover. Seeding here rather than before the loop is what keeps
+            // the cruise out of the PID's history: it starts from the state the
+            // robot is actually in, with no integral from a phase it did not run.
+            if (!handedOver && toGo <= handoverDistance) {
+                handedOver = true;
+                distancePid.zeroAndSetTarget(odometryZero, targetDistance);
+
+                // zeroAndSetTarget leaves prev_error at zero, so the very next
+                // compute would read the whole remaining error as one tick's worth
+                // of change and spike the derivative. In the trapezoid that lands
+                // under the accel ramp and never reaches the motors; here there is
+                // no ramp to hide it. Prime the history with a throwaway compute so
+                // the first real one differentiates against a true previous error.
+                distancePid.compute(travelled);
+            }
+
+            float distancePWM;
+
+            if (handedOver) {
+                if (inDistDeadband) {
+                    distancePid.resetIntegral();
+                }
+                distancePWM = distancePid.compute(travelled);
+            } else {
+                // Flat at cruisePWM, eased in over softStartDistance. profileCap
+                // with no down-ramp is exactly that shape, and it floors at
+                // MIN_MOVING_PWM so the first tick still breaks stiction.
+                const float startCap =
+                    profileCap(abs(travelled), abs(remaining), softStartDistance, 0.0f,
+                               (float)cruisePWM, (float)MIN_MOVING_PWM);
+                distancePWM = (targetDistance > 0) ? startCap : -startCap;
+            }
+
+            // A wall ahead decelerates the robot in both phases. During cruise it
+            // is the only thing that will - the open-loop phase has no idea how
+            // close anything is - and during the approach it is what aims the PID
+            // at the standoff instead of at a target on the far side of the wall.
+            if (frontLimited) {
+                const float frontCap = profileCap(abs(travelled), remaining, 0.0f,
+                                                  handoverDistance, (float)cruisePWM,
+                                                  (float)MIN_MOVING_PWM);
+                distancePWM = constrain(distancePWM, -frontCap, frontCap);
+            }
+
+            if (inDistDeadband) {
+                distancePWM = 0;
+            } else if (abs(distancePWM) < MIN_MOVING_PWM) {
+                distancePWM = (distanceError > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
+            }
+
+            float headingPWM = headingKp * headingError;
+            headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
+
+            if (inAngleDeadband) {
+                headingPWM = 0;
+            } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
+                // Same stiction floor, and the same reason for the wider heading
+                // deadband, as driveDistanceProfiled.
+                headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+            }
+
+            drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
+
+            if (inDistDeadband && inAngleDeadband) {
+                if (timeWhenInitiallySettled == 0) {
+                    timeWhenInitiallySettled = currentTime;
+                }
+
+                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                    drive.stop();
+
+                    if (frontLimited) {
+                        Serial.print(F("front wall: stopped "));
+                        Serial.print(distanceError);
+                        Serial.println(F("mm short"));
+                    }
+
+                    return;
+                }
+            } else {
+                timeWhenInitiallySettled = 0;
+            }
+        }
     }
 
     // Turn by `angleToTurn` degrees under the same trapezoidal envelope, tracking
@@ -1120,253 +1203,6 @@ private:
     static constexpr float MAX_HALF_SPAN = 80.0f;
 
     float getRot() { return imu.getAngleZCustom(); }
-
-    // Watches for the robot being told to drive and not going anywhere.
-    //
-    // The maze floor is two boards butted together, and the join sits proud of
-    // the surface - taped, but a taped lip is still a lip, and it is widest
-    // through the middle of the maze. Meeting it does three separate things to
-    // the robot, and this handles all three:
-    //
-    //   It stops it.        Cruise PWM is picked for rolling on flat board, not
-    //                       for climbing. The distance PID is capped at cruise
-    //                       and every Ki here is zero, so there is nothing in
-    //                       the control law that pushes harder when the robot
-    //                       is not moving - it just leans on the lip until the
-    //                       battery gives out, inside a loop with no way out.
-    //                       climbPWM() is the term that grows: a bounded burst
-    //                       at SEAM_CLIMB_PWM, far above any cruise.
-    //
-    //   It corrupts distance. A wheel spinning against the lip still ticks, and
-    //                       getCurrAvgDist() averages those ticks in as travel.
-    //                       Left alone the robot can satisfy a whole cell of
-    //                       odometry without moving, then "arrive" and turn in
-    //                       the wrong place. While stalled the guard credits
-    //                       only what the slower wheel reports - the one that
-    //                       is against something rather than spinning - and
-    //                       carries the difference forward as slipOffset so the
-    //                       correction survives after the stall clears.
-    //
-    //   It knocks it crooked. One wheel gets up before the other. Steering while
-    //                       the other is still against the lip pivots the robot
-    //                       along the seam instead of over it, so the caller
-    //                       drops the heading correction for the duration of a
-    //                       climb and lets the ordinary heading loop recover
-    //                       the angle on the far side.
-    //
-    // The robot is not assumed to win. Each failed attempt backs off and takes a
-    // run-up, and after SEAM_CLIMB_ATTEMPTS the guard reports exhausted() so the
-    // move can return short. Returning short puts one cell of the mission wrong;
-    // not returning at all ends the run, so short is the lesser evil - and it
-    // says so on serial rather than failing quietly.
-    class SeamGuard {
-    public:
-        // `avg` is Drivetrain::getCurrAvgDist(), `slow` is getMinWheelDist().
-        // `moveDirection` is +1 for a forward move and -1 for a reverse one.
-        void begin(float avg, float slow, float moveDirection, unsigned long now) {
-            direction = moveDirection;
-            avgAtStall = avg;
-            slowAtStall = slow;
-            lastProgress = slow;
-            lastProgressTime = now;
-            startTime = now;
-            correctedDistance = avg;
-        }
-
-        // What the caller actually commanded, recorded at the end of every tick.
-        //
-        // The guard needs `inDeadband` to tell a robot that is stuck from one
-        // that is simply parked, and `distancePWM` is where the climb ramp starts
-        // from. Both are kept here rather than passed into tick() so that the
-        // per-tick call is two arguments wide: on an AVR the arguments are most
-        // of the cost of a call, and the firmware sits within a few hundred bytes
-        // of filling the Nano's flash.
-        void commanded(float distancePWM, bool inDeadband) {
-            lastPWM = distancePWM;
-            wasDriving = !inDeadband && abs(distancePWM) >= MIN_MOVING_PWM;
-        }
-
-        // Odometry with the slip taken back out, as of the last tick(). Equal to
-        // the raw reading until a stall has put something in slipOffset.
-        float distance() const { return correctedDistance; }
-
-        // The PWM the guard wants this tick, or 0 for "not mine". Non-zero means
-        // it is climbing: drive both wheels with it and hold the heading
-        // correction off until it reads zero again.
-        float climbCommand() const { return overridePWM; }
-
-        // Out of attempts. The move cannot be completed and should return.
-        bool exhausted() const { return attempts >= SEAM_CLIMB_ATTEMPTS; }
-
-        // Once a tick, before the drive PWM for this tick is decided. Reached
-        // through Movement::seamTick, which is what reads the encoders and is
-        // where the single shared copy of all of this ends up.
-        void tick(float avg, float slow, unsigned long now) {
-            if (stalled) {
-                advanceStall(avg, slow, now);
-            } else {
-                detectStall(avg, slow, now);
-            }
-
-            correctedDistance = avg - slipOffset;
-            overridePWM = (stalled && !exhausted()) ? direction * climbPWM(now) : 0.0f;
-        }
-
-    private:
-        void detectStall(float avg, float slow, unsigned long now) {
-            // Not armed yet, or not being asked to move: there is nothing to
-            // measure, so keep the progress window sliding along with it.
-            if (!wasDriving || now - startTime < SEAM_ARM_MS ||
-                abs(slow - lastProgress) >= SEAM_PROGRESS_MM) {
-                lastProgress = slow;
-                lastProgressTime = now;
-                return;
-            }
-
-            if (now - lastProgressTime < SEAM_STALL_MS) {
-                return;
-            }
-
-            stalled = true;
-            backingOff = false;
-            attempts = 0;
-            phaseStart = now;
-            // Floored, because the climb ramps up from here and a stall can be
-            // detected while the commanded PWM is small.
-            entryPWM = max(abs(lastPWM), (float)MIN_MOVING_PWM);
-            avgAtStall = avg;
-            slowAtStall = slow;
-            offsetAtStall = slipOffset;
-
-            Serial.println(F("seam: stalled, climbing"));
-        }
-
-        void advanceStall(float avg, float slow, unsigned long now) {
-            // Credit only the wheel that has turned least, so a wheel spinning
-            // against the lip stops counting as travel. Both deltas are measured
-            // from the moment of the stall and the offset is continuous across
-            // it, so nothing the PID sees jumps.
-            const float avgDelta = avg - avgAtStall;
-            const float slowDelta = slow - slowAtStall;
-            const float credited = (abs(slowDelta) < abs(avgDelta)) ? slowDelta : avgDelta;
-            slipOffset = offsetAtStall + (avgDelta - credited);
-
-            // Over it, and far enough over that a wheel creeping in place cannot
-            // be what did it. Measured from where it stalled, so a run-up has to
-            // regain the ground it gave away first.
-            if (direction * credited >= SEAM_CLEAR_MM) {
-                stalled = false;
-                attempts = 0;
-                lastProgress = slow;
-                lastProgressTime = now;
-                Serial.println(F("seam: over it"));
-                return;
-            }
-
-            if (backingOff) {
-                if (now - phaseStart >= SEAM_BACKOFF_MS) {
-                    backingOff = false;
-                    phaseStart = now;
-                    // Straight in at full climb PWM this time. The run-up is the
-                    // point of having backed off - ramping again would spend it.
-                    entryPWM = (float)SEAM_CLIMB_PWM;
-                }
-                return;
-            }
-
-            if (now - phaseStart < SEAM_CLIMB_MS) {
-                return;
-            }
-
-            // That attempt failed.
-            attempts++;
-            if (attempts >= SEAM_CLIMB_ATTEMPTS) {
-                return;  // exhausted() - the caller gives up on the move
-            }
-
-            backingOff = true;
-            phaseStart = now;
-            Serial.println(F("seam: attempt failed, backing off"));
-        }
-
-        // Magnitude of the PWM to command, in the direction of the move. Negative
-        // during a back-off, when the robot is deliberately giving ground.
-        float climbPWM(unsigned long now) const {
-            if (backingOff) {
-                return -(float)SEAM_BACKOFF_PWM;
-            }
-
-            const unsigned long into = now - phaseStart;
-            if (into >= SEAM_CLIMB_RAMP_MS) {
-                return (float)SEAM_CLIMB_PWM;
-            }
-
-            return entryPWM + ((float)SEAM_CLIMB_PWM - entryPWM) *
-                                  ((float)into / (float)SEAM_CLIMB_RAMP_MS);
-        }
-
-        float direction = 1.0f;
-
-        // mm of encoder travel that was slip and must not be credited, and the
-        // reading with it taken out, as handed back by distance().
-        float slipOffset = 0.0f;
-        float correctedDistance = 0.0f;
-
-        // Snapshots taken when the current stall began, so `credited` is always
-        // measured from the lip rather than from the start of the move.
-        float avgAtStall = 0.0f;
-        float slowAtStall = 0.0f;
-        float offsetAtStall = 0.0f;
-
-        // The sliding no-progress window.
-        float lastProgress = 0.0f;
-        unsigned long lastProgressTime = 0;
-        unsigned long startTime = 0;
-
-        // Last tick's command, from commanded().
-        float lastPWM = 0.0f;
-        bool wasDriving = false;
-
-        float entryPWM = 0.0f;
-        float overridePWM = 0.0f;
-        unsigned long phaseStart = 0;
-        uint8_t attempts = 0;
-        bool stalled = false;
-        bool backingOff = false;
-    };
-
-    // Arms a guard for one move. Separate from the loop below only so that the
-    // drive routines do not each carry their own copy of it.
-    __attribute__((noinline))
-    void seamBegin(SeamGuard& seam, float targetDistance) {
-        seam.begin(drive.getCurrAvgDist(), drive.getMinWheelDist(),
-                   (targetDistance > 0) ? 1.0f : -1.0f, millis());
-    }
-
-    // The guard's whole per-tick job, in one call: read the encoders, run the
-    // guard, and decide whether the move can go on. Returns false when the guard
-    // has given up on the lip, in which case the caller must return.
-    //
-    // noinline, and two arguments wide, on purpose. Every drive routine is
-    // defined in the class body, so anything reachable from one of their loops
-    // is at risk of being stamped out once per routine - and this firmware does
-    // not have the flash for that. The results come back through seam.distance()
-    // and seam.climbCommand() rather than out-parameters for the same reason.
-    __attribute__((noinline))
-    bool seamTick(SeamGuard& seam, unsigned long now) {
-        seam.tick(drive.getCurrAvgDist(), drive.getMinWheelDist(), now);
-
-        if (seam.exhausted()) {
-            // Out of attempts. Stop and hand back rather than spin in the
-            // caller's loop for the rest of the run - the next command at least
-            // gets to happen.
-            drive.stop();
-            Serial.println(F("seam: could not climb, move abandoned"));
-            return false;
-        }
-
-        return true;
-    }
 
     // The trapezoid, shared by both profiled routines. Returns the largest
     // output allowed this tick: ramping up over the first `rampUp` of the move,
