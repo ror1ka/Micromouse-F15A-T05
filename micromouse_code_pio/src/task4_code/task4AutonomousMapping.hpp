@@ -13,22 +13,22 @@ constexpr int MAPPING_DRIVE_PWM = 130;
 constexpr int SETTLE_TIME = 100;
 
 //////// IMU ONLY CODE
-struct Task43ImuCell {
-    uint8_t row;
-    uint8_t col;
-};
+// struct Task43ImuCell {
+//     uint8_t row;
+//     uint8_t col;
+// };
 
-// Cells where nearby posts / open geometry make side-LiDAR steering unreliable.
-//
-// ADD THE ACTUAL PROBLEM CELLS HERE.
-constexpr Task43ImuCell TASK43_IMU_ONLY_CELLS[] = {
-    {1, 1},
-    {1, 2},
-    {1, 3},
-    {5, 5}
-};
+// // Cells where nearby posts / open geometry make side-LiDAR steering unreliable.
+// //
+// // ADD THE ACTUAL PROBLEM CELLS HERE.
+// constexpr Task43ImuCell TASK43_IMU_ONLY_CELLS[] = {
+//     {1, 1},
+//     {1, 2},
+//     {1, 3},
+//     {5, 5}
+// };
 
-constexpr uint8_t NUM_TASK43_IMU_ONLY_CELLS = sizeof(TASK43_IMU_ONLY_CELLS) / sizeof(TASK43_IMU_ONLY_CELLS[0]);
+// constexpr uint8_t NUM_TASK43_IMU_ONLY_CELLS = sizeof(TASK43_IMU_ONLY_CELLS) / sizeof(TASK43_IMU_ONLY_CELLS[0]);
 ////// END OF IMU ONLY CODE
 
 // For handling multiple types of errors & whether or not movement is successful
@@ -40,16 +40,16 @@ enum MoveResult : uint8_t {
 };
 
 ///// IMU ONLY CODE
-inline bool task43IsImuOnlyCell(int row, int col) {
-    for (uint8_t i = 0; i < NUM_TASK43_IMU_ONLY_CELLS; i++) {
-        if (TASK43_IMU_ONLY_CELLS[i].row == row &&
-            TASK43_IMU_ONLY_CELLS[i].col == col) {
-            return true;
-        }
-    }
+// inline bool task43IsImuOnlyCell(int row, int col) {
+//     for (uint8_t i = 0; i < NUM_TASK43_IMU_ONLY_CELLS; i++) {
+//         if (TASK43_IMU_ONLY_CELLS[i].row == row &&
+//             TASK43_IMU_ONLY_CELLS[i].col == col) {
+//             return true;
+//         }
+//     }
 
-    return false;
-}
+//     return false;
+// }
 ////// END OF IMU ONLY CODE
 
 // Returns the absolute heading (e.g north) of turning right from the current heading
@@ -251,18 +251,18 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     }
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
-    // mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+    mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
 
     ////// IMU ONLY CODE
     // In the known open/post region, side-LiDAR readings can be misleading.
     // Use encoder distance + IMU heading hold instead.
     //
     // Everywhere else, retain the normal LiDAR-assisted corridor movement.
-    if (task43IsImuOnlyCell(pose.row, pose.col)) {
-        mouse.driveDistanceCruiseNoLidar(180.0f, MAPPING_DRIVE_PWM);
-    } else {
-        mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
-    }
+    // if (task43IsImuOnlyCell(pose.row, pose.col)) {
+    //     mouse.driveDistanceCruiseNoLidar(180.0f, MAPPING_DRIVE_PWM);
+    // } else {
+    //     mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
+    // }
     ///// END OF IMU ONLY CODE
 
     // if (mouse.getCurrAvgDist() < 140.0f) {
