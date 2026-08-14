@@ -8,7 +8,7 @@ struct WaypointCmd {
     float drive_mm;
 };
 
-constexpr int NUM_WAYPOINTS = 6;
+constexpr int NUM_WAYPOINTS = 4;
 constexpr WaypointCmd OBSTACLE_ROUTE[NUM_WAYPOINTS] = {
-    {44.3, 296.6}, {20.4, 37.8}, {15.6, 414.6}, {-13.1, 37.1}, {-19.7, 58.6}, {-47.5, 1.8}
+    {54.9, 272.9}, {-50.1, 190.7}, {83.7, 269.4}, {45.9, 94.7}
 };
