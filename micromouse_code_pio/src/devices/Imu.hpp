@@ -68,8 +68,10 @@ public:
         delay(500);
 
         // Start full reseting
-        resetHeading();
+        
         mpu.calcOffsets();
+        resetHeading();
+        lastUpdateTime = millis();
     }
 
     // Current yaw in degrees. Free-running: it is not wrapped to +/-180.
