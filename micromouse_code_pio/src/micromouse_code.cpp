@@ -91,7 +91,7 @@ void loop() {
   // maze.setWallState(4, 4, WEST, WALL);
   // maze.setWallState(4, 4, EAST, WALL);
   // maze.setWallState(4, 4, SOUTH, NO_WALL);
-  
+
   // maze.setWallState(4, 5, NORTH, WALL);
   // maze.setWallState(4, 5, EAST, WALL);
 
