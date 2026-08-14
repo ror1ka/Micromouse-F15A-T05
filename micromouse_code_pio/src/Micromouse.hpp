@@ -122,6 +122,10 @@ public:
   void printIMU() { imuSensor.print(); }
   void printLidar() { lidarArray.print(); }
   void printMessageToOled(char* message) { oledDisplay.printMessage(64, 32, message); }
+  void printLidarToOled() { oledDisplay.printLidar(
+    getMedianDistance(LidarArray::Id::Front),
+    getMedianDistance(LidarArray::Id::Left),
+    getMedianDistance(LidarArray::Id::Right)); }
 
 private:
   // Declared before motion, which holds references to all three.
