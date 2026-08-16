@@ -91,7 +91,7 @@ void loop() {
   // maze.setWallState(4, 4, WEST, WALL);
   // maze.setWallState(4, 4, EAST, WALL);
   // maze.setWallState(4, 4, SOUTH, NO_WALL);
-
+  
   // maze.setWallState(4, 5, NORTH, WALL);
   // maze.setWallState(4, 5, EAST, WALL);
 
@@ -110,25 +110,20 @@ void loop() {
   // }
 
   // task43HasRun = true;
-  runTask4_3(
-      mouse,
-      maze,
-      planner,
-      pose,
-      startPose,
-      7,
-      7
-  );
-  while(true) {
-
-  }
-
-  mouse.printLidarToOled();
-
+  //  runTask4_3(
+  //     mouse,
+  //     maze,
+  //     planner,
+  //     pose,
+  //     startPose,
+  //     7,
+  //     7
+  // );
+  
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
-  // chainMovement(mouse, "lfrffffffrflf");
+  chainMovement(mouse, "ffffllffffrr");
  //chainMission(mouse, MISSION, NUM_COMMANDS);
   // mouse.printLidar();
 

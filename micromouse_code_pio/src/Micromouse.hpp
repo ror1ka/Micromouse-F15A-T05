@@ -49,11 +49,7 @@ public:
   void turnLeft(int16_t speed, float target, float err) { motion.turnLeft(speed, target, err); }
   void turnRight(int16_t speed, float target, float err) { motion.turnRight(speed, target, err); }
   void turnAngle(int16_t speed, float angle) { motion.turnAngle(speed, angle); }
-  void travelDistance(uint16_t dist, int16_t speed) { motion.travelDistance(dist, speed); }
   
-  void turnByAngle(float angleToTurn, int maxTurningPWM) {
-    motion.turnByAngle(angleToTurn, maxTurningPWM);
-  }
   void driveDistanceProfiled(float targetDistance, int maxPWM) {
     motion.driveDistanceProfiled(targetDistance, maxPWM);
   }
