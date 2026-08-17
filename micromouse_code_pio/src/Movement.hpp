@@ -642,9 +642,12 @@ public:
     // Reads the cache LidarArray::poll() fills, so a caller that wants live
     // numbers has to be polling. A control loop already is; anything else should
     // call refreshAll() first.
+    // bool getWallOffset(float& offset) {
+    //     const int left = lidar.latestLeft();
+    //     const int right = lidar.latestRight();
     bool getWallOffset(float& offset) {
-        const int left = lidar.latestLeft();
-        const int right = lidar.latestRight();
+        const int left = ignoreLeftLidar ? LidarArray::NO_READING : lidar.latestMedianLeft();
+        const int right = ignoreRightLidar ? LidarArray::NO_READING : lidar.latestMedianRight();
 
         const bool leftWall = (left > 0 && left < WALL_THRESHOLD);
         const bool rightWall = (right > 0 && right < WALL_THRESHOLD);
@@ -701,6 +704,14 @@ public:
     // True when there is a wall close enough ahead to be worth stopping for.
     bool frontWallTooClose() {
         return frontTravelLimit() <= 0.0f;
+    }
+
+    // Makes getWallOffset() treat one or both side LiDARs as if they saw
+    // nothing, regardless of what they are actually reading. Sticks until
+    // the next call - set it fresh before every move.
+    void setSideLidarIgnore(bool ignoreLeft, bool ignoreRight) {
+        ignoreLeftLidar = ignoreLeft;
+        ignoreRightLidar = ignoreRight;
     }
 
     // Stands in for "no wall ahead". Large enough that it never wins a min()
@@ -1058,5 +1069,9 @@ private:
 
     // Side clearance of a centred robot, measured the last time both walls were
     // visible at once. Zero until that has happened. See getWallOffset.
+    // float learnedHalfSpan = 0;
     float learnedHalfSpan = 0;
+
+    bool ignoreLeftLidar = false;
+    bool ignoreRightLidar = false;
 };

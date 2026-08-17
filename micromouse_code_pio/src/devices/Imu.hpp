@@ -65,7 +65,8 @@ public:
 
     void fullReset() {
         // Delay to first ensures its in a position of stopping
-        delay(500);
+        // delay(500);
+        delay(800);
 
         // Start full reseting
         

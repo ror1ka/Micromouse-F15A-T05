@@ -101,6 +101,9 @@ public:
   bool getWallOffset(float& offset) { return motion.getWallOffset(offset); }
   float frontTravelLimit() { return motion.frontTravelLimit(); }
   bool frontWallTooClose() { return motion.frontWallTooClose(); }
+  void setSideLidarIgnore(bool ignoreLeft, bool ignoreRight) {
+    motion.setSideLidarIgnore(ignoreLeft, ignoreRight);
+  }
 
   void updateMpu() { imuSensor.update(); }
   float getRot() { return imuSensor.getAngleZ(); }

@@ -108,7 +108,8 @@ public:
                 // ticks - and a control loop cannot afford that on every read.
                 recordFailure(channel, now);
             } else {
-                recordReading(channel, readResult(channel), now);
+                // recordReading(channel, readResult(channel), now);
+                recordReading(active, readResult(channel), now);
             }
 
             measuring = false;
@@ -142,6 +143,46 @@ public:
     int latestLeft() const { return latest(Left); }
     int latestRight() const { return latest(Right); }
 
+    // Like latest(), but the median of the last MEDIAN_HISTORY completed
+    // measurements instead of just the newest one. Still non-blocking - this
+    // only looks at samples poll() has already collected, so it costs nothing
+    // extra to call from a control loop.
+    int latestMedian(Id id) const {
+        const Channel& channel = channels[id];
+
+        if (channel.reading < 0 || millis() - channel.readingTime > STALE_TIMEOUT) {
+            return NO_READING;
+        }
+
+        int16_t sorted[MEDIAN_HISTORY];
+        uint8_t n = 0;
+        for (uint8_t i = 0; i < MEDIAN_HISTORY; i++) {
+            if (history[id][i] > 0) {
+                sorted[n++] = history[id][i];
+            }
+        }
+
+        if (n == 0) {
+            return channel.reading;
+        }
+
+        for (uint8_t i = 1; i < n; i++) {
+            int16_t key = sorted[i];
+            int8_t j = (int8_t)i - 1;
+            while (j >= 0 && sorted[j] > key) {
+                sorted[j + 1] = sorted[j];
+                j--;
+            }
+            sorted[j + 1] = key;
+        }
+
+        return sorted[n / 2];
+    }
+
+    int latestMedianFront() const { return latestMedian(Front); }
+    int latestMedianLeft() const { return latestMedian(Left); }
+    int latestMedianRight() const { return latestMedian(Right); }
+
     // millis() at which latest(id) was measured. A caller that needs to know
     // how far the robot has moved since a reading was taken can watch this for
     // a change - a cached range is about where the robot was, not where it is.
@@ -154,8 +195,11 @@ public:
     void refreshAll() {
         measuring = false;
 
+        // for (uint8_t i = 0; i < Count; i++) {
+        //     readBlocking(channels[i]);
+        // }
         for (uint8_t i = 0; i < Count; i++) {
-            readBlocking(channels[i]);
+            readBlocking((Id)i);
         }
     }
 
@@ -171,7 +215,8 @@ public:
         // interrupt before the next one, so dropping it here is safe.
         measuring = false;
 
-        return readBlocking(channels[id]);
+        // return readBlocking(channels[id]);
+        return readBlocking(id);
     }
 
     int readFront() { return read(Front); }
@@ -294,6 +339,14 @@ private:
     bool measuring = false;
     unsigned long measurementStart = 0;
 
+    // Ring of the last few valid readings per channel, backing latestMedian().
+    // Kept separate from Channel rather than added as a field on it: Channel
+    // is brace-initialised as an aggregate, and giving these a default value
+    // here is simpler than extending that initialiser list by hand.
+    static constexpr uint8_t MEDIAN_HISTORY = 3;
+    int16_t history[Count][MEDIAN_HISTORY] = {};
+    uint8_t historyNext[Count] = {};
+
     // Brings one sensor out of shutdown and moves it off the shared default address.
     void configure(Channel& channel) {
         digitalWrite(channel.enablePin, HIGH);
@@ -350,8 +403,12 @@ private:
     // polled path - so a sensor that is failing is noticed and recovered however
     // it is being read, and a caller cannot accidentally clear that history by
     // filing the result a second time.
-    int readBlocking(Channel& channel) {
+    // int readBlocking(Channel& channel) {
+    //     startMeasurement(channel);
+    int readBlocking(Id id) {
+        Channel& channel = channels[id];
         startMeasurement(channel);
+
 
         const unsigned long start = millis();
         while (!measurementReady(channel)) {
@@ -361,8 +418,10 @@ private:
             }
         }
 
+        // const int distance = readResult(channel);
+        // recordReading(channel, distance, millis());
         const int distance = readResult(channel);
-        recordReading(channel, distance, millis());
+        recordReading(id, distance, millis());
 
         return distance;
     }
@@ -370,10 +429,22 @@ private:
     // Files a completed measurement. `distance` may be NO_READING, which means
     // the sensor answered but saw nothing - that is a normal, healthy result in
     // open space and must not count as a fault.
-    void recordReading(Channel& channel, int distance, unsigned long now) {
+    // void recordReading(Channel& channel, int distance, unsigned long now) {
+    //     channel.consecutiveFailures = 0;
+    //     channel.reading = (distance > 0) ? (int16_t)distance : (int16_t)NO_READING;
+    //     channel.readingTime = now;
+    // }
+    void recordReading(Id id, int distance, unsigned long now) {
+        Channel& channel = channels[id];
         channel.consecutiveFailures = 0;
         channel.reading = (distance > 0) ? (int16_t)distance : (int16_t)NO_READING;
         channel.readingTime = now;
+
+        // Only real in-range distances go into the median history.
+        if (distance > 0) {
+            history[id][historyNext[id]] = (int16_t)distance;
+            historyNext[id] = (historyNext[id] + 1) % MEDIAN_HISTORY;
+        }
     }
 
     // Files a measurement that never arrived, i.e. the sensor stopped talking.

@@ -12,6 +12,9 @@ constexpr int MAPPING_TURN_PWM = 70;
 constexpr int MAPPING_DRIVE_PWM = 130;
 constexpr int SETTLE_TIME = 100;
 
+constexpr int OUTER_WALL_CONFIRM_MIN = 20;
+constexpr int OUTER_WALL_CONFIRM_MAX = 70;
+
 //////// IMU ONLY CODE
 // struct Task43ImuCell {
 //     uint8_t row;
@@ -51,6 +54,53 @@ enum MoveResult : uint8_t {
 //     return false;
 // }
 ////// END OF IMU ONLY CODE
+
+///// ADDED OUTER-BOUNDARY LIDAR MASK CODE
+inline bool cellFacesMazeBoundary(MazeMap& maze, int row, int col, Direction side) {
+    int neighbourRow, neighbourCol;
+    return !maze.updateNeighbour(row, col, side, neighbourRow, neighbourCol);
+}
+
+// Confirms whether an outward-facing side of the CURRENT cell contains a
+// genuine wall. This is deliberately performed while the robot is stationary
+// near the centre of the cell.
+//
+// getMedianDistance() performs five fresh blocking measurements and returns
+// their median, so an isolated bad LiDAR sample cannot determine the result.
+//
+// A wall is only considered confirmed when its measured distance is close to
+// the normal side-wall setpoint. A small peg at a cell intersection should
+// normally not lie on the LiDAR ray when the robot is centred in the cell.
+inline bool confirmOuterBoundaryWall(Micromouse& mouse,
+                                     LidarArray::Id sensor) {
+    const int distance = mouse.getMedianDistance(sensor);
+
+    return distance >= OUTER_WALL_CONFIRM_MIN &&
+           distance <= OUTER_WALL_CONFIRM_MAX;
+}
+
+// True if EITHER the cell being left or the cell being entered has `side`
+// facing off the maze. Checking only the source cell is not enough - the
+// maze is an octagon (see MazeMap::inMaze's corner cuts), and near each of
+// the 4 cut corners a cell and the very next cell along a straight run can
+// disagree about whether a side faces the boundary. Verified exhaustively
+// over the whole 9x9: 32 cell/direction pairs where this matters.
+inline bool facesMazeBoundaryEitherEnd(MazeMap& maze, int row, int col,
+                                       Direction travelHeading, Direction side) {
+    if (cellFacesMazeBoundary(maze, row, col, side)) {
+        return true;
+    }
+
+    int nextRow, nextCol;
+    if (maze.updateNeighbour(row, col, travelHeading, nextRow, nextCol)) {
+        if (cellFacesMazeBoundary(maze, nextRow, nextCol, side)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+///// END OUTER-BOUNDARY LIDAR MASK CODE
 
 ///// ADDED RESET IMU CODE
 inline bool currentCellHasThreeWalls(MazeMap& maze, const Pose& pose) {
@@ -265,7 +315,43 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     }
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
+    // mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
+
+    // const bool ignoreLeft = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading,
+    //                                                    leftDirection(pose.heading));
+    // const bool ignoreRight = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading,
+    //                                                     rightDirection(pose.heading));
+
+    const Direction leftDir = leftDirection(pose.heading);
+    const Direction rightDir = rightDirection(pose.heading);
+    bool ignoreLeft = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading, leftDir);
+    bool ignoreRight = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading, rightDir);
+
+    // Checks if current cell is at the outer edge and which side (left/right) faces outward
+    // and disables the lidar tracking on that side if there's no wall on the starting position
+    // and if there is a wall then it's safe to use lidar tracking
+    if (cellFacesMazeBoundary(maze, pose.row, pose.col, leftDir)) {
+        if (confirmOuterBoundaryWall(mouse, LidarArray::Left)) {
+            ignoreLeft = false;
+        } else {
+            ignoreLeft = true;
+        }
+    }
+    if (cellFacesMazeBoundary(maze, pose.row, pose.col, rightDir)) {
+        if (confirmOuterBoundaryWall(mouse, LidarArray::Right)) {
+            ignoreRight = false;
+        } else {
+            ignoreRight = true;
+        }
+    }
+
+    mouse.setSideLidarIgnore(ignoreLeft, ignoreRight);
+
+    // Moves into the neighbour cell -- UNCOMMENT THIS:
     mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
+
+    mouse.setSideLidarIgnore(false, false);
+
 
     ////// IMU ONLY CODE
     // In the known open/post region, side-LiDAR readings can be misleading.
