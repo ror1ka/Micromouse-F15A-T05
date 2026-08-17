@@ -690,7 +690,7 @@ public:
     // the distance travelled since LidarArray::readingStamp(Front) last changed,
     // which is what driveDistanceProfiledLidar does.
     float frontTravelLimit() {
-        const int front = lidar.latestFront();
+        const int front = lidar.latestMedianFront();
 
         // NO_READING is open space as far as the front is concerned: the sensor
         // answered and saw nothing within range.
