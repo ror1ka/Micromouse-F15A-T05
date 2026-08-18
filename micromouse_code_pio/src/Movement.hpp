@@ -1321,10 +1321,17 @@ private:
     static constexpr float MAX_HALF_SPAN = 80.0f;
 
     // How far the measured heading may sit from the commanded one before a drive
-    // stops trying to steer the difference out. Comfortably above anything the
-    // turn deadband, coast and a move's worth of drift can add up to, and well
-    // below a quarter turn.
-    static constexpr float MAX_HEADING_RECOVERY = 20.0f;
+    // stops trying to steer the difference out, gives up on the frame and
+    // re-seeds it from the measurement.
+    //
+    // Kept tight, because this is the number that decides how hard the robot can
+    // swerve at the start of a move. A turn settles inside a 1.2 degree deadband,
+    // coasts about a degree past, and a move picks up a degree or so of drift, so
+    // a legitimate residual is a few degrees; 8 leaves room for a bad one. Beyond
+    // that the heading estimate is not slightly stale, it is wrong - and driving
+    // 180mm of corridor leaning 20 degrees to take out an error that was never
+    // really there is far worse than accepting where the robot is pointing.
+    static constexpr float MAX_HEADING_RECOVERY = 8.0f;
 
     float getRot() { return imu.getAngleZCustom(); }
 

@@ -7,6 +7,34 @@
 // Any rotation below this is ignored
 static constexpr float DEADBAND_THRESHOLD = 0.5;
 
+// Corrects a systematic error in the gyro's degrees-per-second scale: the angle
+// it reports for a rotation it really did perform. 1.0 means believe it.
+//
+// This is the last accumulating error left in the heading, and the only one that
+// cannot be fixed by bookkeeping - the "absolute" heading frame IS the gyro, so
+// if the gyro reads 89 degrees for a real 90, every quarter turn is a degree out
+// and nothing downstream can tell. It has to be corrected here, at the sensor,
+// because it skews the heading hold during drives too, not just turns.
+//
+// TO CALIBRATE: square the robot against a wall, mark its position, run four
+// turns the same way (`mouse.turnByAngleProfiled(90, 70)` x4, or 4 lefts through
+// chainMovement), and measure how far off 360 it finished. Overshot by N degrees
+// total means the gyro under-reads: multiply GYRO_SCALE by 360/(360+N). Repeat
+// the other way to confirm - a genuine scale error is symmetric, and one that is
+// not is a turn dynamics problem, not this. Do NOT correct it by shaving degrees
+// off TURN_LEFT/TURN_RIGHT; that is what used to be done, and it re-introduces a
+// per-turn error the absolute frame cannot see or take out.
+static constexpr float GYRO_SCALE = 1.0f;
+
+// Longest gap between update() calls, in ms, that still describes motion the
+// gyro actually watched. The control loops tick every 10ms, so a normal gap is
+// 10; the only things that exceed this are the blocking sensor reads and
+// redraws between moves, and the robot is stopped for all of them. See update().
+//
+// Comfortably above the ~60ms a LiDAR power-cycle recovery can block a moving
+// control loop for, so a recovery still integrates rather than being discarded.
+static constexpr unsigned long MAX_INTEGRATION_GAP = 100;
+
 
 // Thin wrapper around the MPU6050. The robot only ever uses the Z axis (yaw),
 // so that is all this exposes.
@@ -45,17 +73,41 @@ public:
     void update() {
         mpu.update();
 
-        unsigned long now = millis();
-        float dt = (now - lastUpdateTime) / 1000.0; // Convert milliseconds to seconds
+        const unsigned long now = millis();
+        const unsigned long elapsed = now - lastUpdateTime;
         lastUpdateTime = now;
 
+        // Nothing was watching the gyro for this long, so there is no rate
+        // history to integrate over the gap - there is one instantaneous sample,
+        // taken now, and `elapsed` seconds of unobserved time to multiply it by.
+        //
+        // That multiplication is why the heading used to walk away over a Task
+        // 4.3 run. update() is only ever called from Movement's control loops,
+        // and between two cells the robot leaves them entirely: SETTLE_TIME,
+        // three getMedianDistance() calls at 5 blocking samples each, the OLED
+        // redraw and a flood fill add up to well over a second with no update()
+        // in sight. The next call then took a single sample of a noisy gyro and
+        // credited it with 1-2 seconds of rotation - several degrees, per cell.
+        //
+        // The deadband below makes it worse rather than better: it drops the
+        // small samples and keeps the large ones, so what survives is not noise
+        // that averages out but a rectified, one-directional push.
+        //
+        // The robot is stationary for every one of those gaps, so zero is not
+        // just the safe answer, it is the right one.
+        if (elapsed > MAX_INTEGRATION_GAP) {
+            return;
+        }
+
+        const float dt = elapsed / 1000.0f; // Convert milliseconds to seconds
+
         // Get the current rotational speed
-        float dZ = mpu.getGyroZ();
+        const float dZ = mpu.getGyroZ();
 
         // If rotation is less than our threshold, treat it as 0 to stop drift
         // while the rover is stopped or driving straight.
         if (abs(dZ) > DEADBAND_THRESHOLD) {
-            customAngleZ += dZ * dt;
+            customAngleZ += dZ * dt * GYRO_SCALE;
         }
     }
 
