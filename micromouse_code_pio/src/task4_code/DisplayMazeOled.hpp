@@ -18,6 +18,14 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
     int offsetFromCornerX = 1;
     int offsetFromCornerY = 1;
 
+    // The digits-only subset of the same 5x7 typeface the display used before.
+    // Identical metrics (5x7 cell, cap height 6), so the numbers come out
+    // pixel-for-pixel as they did - it just carries " *+,-./0123456789:"
+    // instead of all of ASCII, which is 174 bytes of flash against 804.
+    //
+    // The one glyph it does not carry is '%' itself, ASCII 37: every _tn and
+    // _mn subset in u8g2 stops at ':'. It is drawn by hand below.
+    oledDisplay.setFont(u8g2_font_5x7_tn);
     oledDisplay.firstPage();
 
     while (true) {
@@ -67,29 +75,26 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
         // Draws mouse at current pose as a little box
         oledDisplay.drawBox(mousePixelX - 1, mousePixelY - 1, 3, 3);
 
-        // Completion as a bar rather than a number. This was the only text on
-        // the screen, and setFont pulled the whole 5x7 glyph table into flash
-        // for those three characters - 964 bytes, measured, which is what got
-        // the firmware back under the 30720-byte limit. The bar is drawn with
-        // drawFrame/drawBox, and drawBox is already linked for the mouse
-        // marker, so it costs almost nothing.
-        //
-        // (U8G2::write and the glyph decoder stay linked regardless - U8G2
-        // derives from Print, so its vtable anchors them. Only the font table
-        // is actually recoverable here.)
-        //
-        // 62 pixels of fill, so one pixel is a little under 2% - finer than the
-        // 1-cell steps the percentage actually moves in on a 9x9 maze.
-        const int barX = 58;
-        const int barY = 56;
-        const int barWidth = 64;
-        const int barHeight = 7;
-        const int fillWidth = (maze.getCompletionPercent() * (barWidth - 2)) / 100;
+        // Completion score, as a percentage of the cells visited.
+        const int pctX = 58;
+        const int pctBaseline = 63;
 
-        oledDisplay.drawFrame(barX, barY, barWidth, barHeight);
-        if (fillWidth > 0) {
-            oledDisplay.drawBox(barX + 1, barY + 1, fillWidth, barHeight - 2);
-        }
+        oledDisplay.setCursor(pctX, pctBaseline);
+        oledDisplay.print(maze.getCompletionPercent());
+
+        // The '%' sign, drawn rather than typed - see the font note above.
+        // Cap height is 6 and the baseline is 63, so the digits occupy rows
+        // 58..63 and this sits in the same band: dot top-left, dot
+        // bottom-right, diagonal between them.
+        //
+        // drawPixel and drawLine are both already linked for the maze grid, so
+        // the whole glyph costs a handful of call sites rather than a font.
+        const int pctSignX = oledDisplay.getCursorX() + 1;
+        const int pctTop = pctBaseline - 5;
+
+        oledDisplay.drawPixel(pctSignX, pctTop);
+        oledDisplay.drawPixel(pctSignX + 4, pctTop + 5);
+        oledDisplay.drawLine(pctSignX + 4, pctTop, pctSignX, pctTop + 5);
 
         // I'm pretty sure this will return false once the entire image is generated 
         // tho need to fully confirm
