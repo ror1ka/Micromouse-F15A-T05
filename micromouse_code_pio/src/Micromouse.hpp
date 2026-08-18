@@ -111,6 +111,12 @@ public:
   float getPrevRot() const { return motion.getPrevRot(); }
   static float normaliseAngle(float angle) { return Imu::normaliseAngle(angle); }
   void fullResetMpu() { return imuSensor.fullReset(); }
+  void recalibrateImuKeepHeading() {
+      motion.recalibrateImuKeepHeading();
+  }
+  void snapToKnownHeading(float trueHeadingDegrees) {
+      motion.snapToKnownHeading(trueHeadingDegrees);
+  }
 
   //////// Odometry ////////
   float getLeftWheelDist() { return drivetrain.getLeftWheelDist(); }

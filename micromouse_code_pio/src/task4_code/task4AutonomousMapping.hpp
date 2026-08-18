@@ -12,6 +12,9 @@ constexpr int MAPPING_TURN_PWM = 70;
 constexpr int MAPPING_DRIVE_PWM = 130;
 constexpr int SETTLE_TIME = 100;
 
+constexpr float MAPPING_TURN_RIGHT = -90.0f;
+constexpr float MAPPING_TURN_LEFT  =  90.0f;
+
 constexpr int OUTER_WALL_CONFIRM_MIN = 20;
 constexpr int OUTER_WALL_CONFIRM_MAX = 70;
 
@@ -112,6 +115,16 @@ inline bool currentCellHasThreeWalls(MazeMap& maze, const Pose& pose) {
     if (maze.getWallState(pose.row, pose.col, WEST)  == WALL) wallCount++;
 
     return wallCount == 3;
+}
+
+// Absolute heading, in the IMU's frame (where the robot was known to be
+// facing startHeading when the IMU's zero was established at setup), that
+// `direction` corresponds to. NORTH->EAST->SOUTH->WEST is the clockwise
+// (right-turn, -90 degree) cycle, matching the Direction enum's order.
+inline float expectedHeadingDegrees(Direction direction, Direction startHeading) {
+    int rightTurnsFromStart =
+        (static_cast<int>(direction) - static_cast<int>(startHeading) + 4) % 4;
+    return Imu::normaliseAngle(-90.0f * rightTurnsFromStart);
 }
 ///// ENDED REST IMU CODE
 
@@ -375,7 +388,7 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     return MOVE_SUCCESS;
 }
 
-inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose) {
+inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, Direction startHeading) {
     while (true) {
         if (!maze.hasBeenVisited(pose.row, pose.col)) {
             // Senses current cell if it hasn't been visited already
@@ -385,16 +398,30 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
                 continue;
                 // return false;
             }
+            if (currentCellHasThreeWalls(maze, pose)) {
+                mouse.recalibrateImuKeepHeading();
 
+                // pose.heading hasn't changed since arriving here, and a
+                // 3-wall cell proves that's genuinely the direction the
+                // robot is facing - wipe out any drift accumulated since
+                // the last checkpoint rather than just steadying the rate.
+                mouse.snapToKnownHeading(expectedHeadingDegrees(pose.heading, startHeading));
+            }
             //////////////////////// ADDED IMU RESET CODE
             // A 3-wall cell is a useful stationary point to remove accumulated
             // IMU drift and recalculate the gyro offsets.
-            if (currentCellHasThreeWalls(maze, pose)) {
-                mouse.drive().stop();
-                mouse.imu().fullReset();
+            // if (currentCellHasThreeWalls(maze, pose)) {
+            //     mouse.drive().stop();
+            //     mouse.imu().fullReset();
 
-                // Serial.println(F("3-wall cell: IMU heading reset"));
-            }
+            //     // Serial.println(F("3-wall cell: IMU heading reset"));
+            // }
+            /////// MOST RECENT CHANGE
+            // if (currentCellHasThreeWalls(maze, pose)) {
+            //     mouse.recalibrateImuKeepHeading();
+
+            //     // Serial.println(F("3-wall cell: IMU recalibrated"));
+            // }
             //// END ADDED IMU RESET CODE
         }
 
@@ -428,11 +455,26 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
     }
 }
 
-inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, int targetRow, int targetCol) {
+// inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, int targetRow, int targetCol) {
+//     if (!maze.inMaze(targetRow, targetCol)) {
+//         return false;
+//     }
+//     while (pose.row != targetRow || pose.col != targetCol) {
+inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose,
+                           int targetRow, int targetCol, Direction startHeading) {
     if (!maze.inMaze(targetRow, targetCol)) {
         return false;
     }
     while (pose.row != targetRow || pose.col != targetCol) {
+        // Same ground-truth re-anchor mapEntireMaze uses, now covering the
+        // return trip and the shortest-path run too - both already-mapped
+        // phases, so this needs nothing new, just the existing wall data.
+        if (currentCellHasThreeWalls(maze, pose)) {
+            mouse.recalibrateImuKeepHeading();
+            mouse.snapToKnownHeading(expectedHeadingDegrees(pose.heading, startHeading));
+            // Serial.println(F("3-wall cell: IMU recalibrated + heading snapped"));
+        }
+        /////////
         if (!planner.floodFill(maze, targetRow, targetCol)) {
             return false;
         }
@@ -465,12 +507,15 @@ inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& 
         return false;
     }
     ////// AUTONOMOUS MAPPING
-    if (!mapEntireMaze(mouse, maze, planner, pose)) {
+    if (!mapEntireMaze(mouse, maze, planner, pose, startPose.heading)) {
         return false;
     }
 
     ////// RETURN TO START
-    if (!navigateToCell(mouse, maze, planner, pose, startPose.row, startPose.col)) {
+    // if (!navigateToCell(mouse, maze, planner, pose, startPose.row, startPose.col)) {
+    //     return false;
+    // }
+    if (!navigateToCell(mouse, maze, planner, pose, startPose.row, startPose.col, startPose.heading)) {
         return false;
     }
     // Turn to original heading
@@ -480,7 +525,10 @@ inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& 
     delay(500);
 
     ////// Shortest path run
-    if (!navigateToCell(mouse, maze, planner, pose, targetRow, targetCol)) {
+    // if (!navigateToCell(mouse, maze, planner, pose, targetRow, targetCol)) {
+    //     return false;
+    // }
+    if (!navigateToCell(mouse, maze, planner, pose, targetRow, targetCol, startPose.heading)) {
         return false;
     }
     drawMazeOled(mouse, maze, pose);

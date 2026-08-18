@@ -37,6 +37,28 @@ public:
         targetGlobalHeading = getRot();
     }
 
+    void recalibrateImuKeepHeading() {
+        drive.stop();
+
+        // Recalibrate the gyro while stationary, but deliberately DO NOT
+        // reset customAngleZ or targetGlobalHeading.
+        imu.recalibrateStationary();
+
+        // Get one fresh sample after calibration so the next control loop
+        // starts from a current IMU measurement.
+        imu.update();
+    }
+    // Forces both the sensor's running estimate and the commanded target
+    // onto a heading known to be correct from something other than the IMU
+    // - e.g. maze wall geometry. This is the only thing in the whole run
+    // that re-anchors heading against physical reality;
+    // recalibrateImuKeepHeading() only stops the bias growing further, it
+    // can't undo angle error that has already accumulated.
+    void snapToKnownHeading(float trueHeadingDegrees) {
+        imu.setAngleZCustom(trueHeadingDegrees);
+        targetGlobalHeading = trueHeadingDegrees;
+    }
+    
     //////// Original routines ////////
 
     // Spin until the heading passes `target`, easing off once past `err`.
@@ -308,7 +330,9 @@ public:
         // steering start the move with real numbers rather than the last move's.
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        // const float baseHeading = getRot();
+        const float baseHeading = targetGlobalHeading;
+
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
         // Offset applied to baseHeading, in degrees. +ve steers left.
@@ -546,6 +570,7 @@ public:
         lidar.refreshAll();
 
         const float baseHeading = getRot();
+        // const float baseHeading = targetGlobalHeading;
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
@@ -757,7 +782,8 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        // const float baseHeading = getRot();
+        const float baseHeading = targetGlobalHeading;
         const float odometryZero = drive.getCurrAvgDist();
 
         bool handedOver = false;
@@ -931,7 +957,10 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        // const float baseHeading = getRot();
+        //////
+        const float baseHeading = targetGlobalHeading;
+        //////
         const float odometryZero = drive.getCurrAvgDist();
 
         float wallTrim = 0.0f;
@@ -1142,11 +1171,19 @@ public:
         turnPid.zeroAndSetTarget(0.0f, 0.0f);
         turnPid.setLimits(0.0f, (float)MAX_PWM);
 
-        imu.resetHeading();
+        // imu.resetHeading();
 
+        // imu.update();
+        // const float startHeading = imu.getAngleZCustom();
+        // targetGlobalHeading = Imu::normaliseAngle(imu.getAngleZCustom() + angleToTurn);
+        /////////
         imu.update();
+
         const float startHeading = imu.getAngleZCustom();
-        targetGlobalHeading = Imu::normaliseAngle(imu.getAngleZCustom() + angleToTurn);
+        targetGlobalHeading =
+            Imu::normaliseAngle(targetGlobalHeading + angleToTurn);
+        /////////
+        
         maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
 
         unsigned long previousLoopTime = millis();

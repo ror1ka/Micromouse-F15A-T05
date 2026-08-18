@@ -62,7 +62,16 @@ public:
     void resetHeading() {
         customAngleZ = 0.0;
     }
-
+    // Overwrites the accumulated heading with a known-true value, without
+    // touching gyro calibration. Unlike resetHeading() (always zeroes it),
+    // this is for when the CURRENT physical heading is independently known
+    // - e.g. a maze cell boxed in on 3 sides proves which compass direction
+    // the robot must be facing, regardless of where gyro integration has
+    // drifted to.
+    void setAngleZCustom(float trueHeadingDegrees) {
+        customAngleZ = trueHeadingDegrees;
+    }
+    
     void fullReset() {
         // Delay to first ensures its in a position of stopping
         // delay(500);
@@ -72,6 +81,19 @@ public:
         
         mpu.calcOffsets();
         resetHeading();
+        lastUpdateTime = millis();
+    }
+
+    void recalibrateStationary() {
+        // The robot must already be stationary.
+        delay(800);
+
+        // Recalculate gyro/accelerometer offsets without changing the
+        // accumulated custom heading.
+        mpu.calcOffsets();
+
+        // Prevent the long calibration interval from appearing as a huge
+        // integration timestep.
         lastUpdateTime = millis();
     }
 
