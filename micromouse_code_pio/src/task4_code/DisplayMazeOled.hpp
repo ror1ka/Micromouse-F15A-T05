@@ -18,7 +18,6 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
     int offsetFromCornerX = 1;
     int offsetFromCornerY = 1;
 
-    oledDisplay.setFont(u8g2_font_5x7_tr);
     oledDisplay.firstPage();
 
     while (true) {
@@ -68,9 +67,29 @@ inline void drawMazeOled(Micromouse& mouse, MazeMap& maze, Pose& pose){
         // Draws mouse at current pose as a little box
         oledDisplay.drawBox(mousePixelX - 1, mousePixelY - 1, 3, 3);
 
-        oledDisplay.setCursor(58, 63);
-        oledDisplay.print(maze.getCompletionPercent());
-        oledDisplay.print("%");
+        // Completion as a bar rather than a number. This was the only text on
+        // the screen, and setFont pulled the whole 5x7 glyph table into flash
+        // for those three characters - 964 bytes, measured, which is what got
+        // the firmware back under the 30720-byte limit. The bar is drawn with
+        // drawFrame/drawBox, and drawBox is already linked for the mouse
+        // marker, so it costs almost nothing.
+        //
+        // (U8G2::write and the glyph decoder stay linked regardless - U8G2
+        // derives from Print, so its vtable anchors them. Only the font table
+        // is actually recoverable here.)
+        //
+        // 62 pixels of fill, so one pixel is a little under 2% - finer than the
+        // 1-cell steps the percentage actually moves in on a 9x9 maze.
+        const int barX = 58;
+        const int barY = 56;
+        const int barWidth = 64;
+        const int barHeight = 7;
+        const int fillWidth = (maze.getCompletionPercent() * (barWidth - 2)) / 100;
+
+        oledDisplay.drawFrame(barX, barY, barWidth, barHeight);
+        if (fillWidth > 0) {
+            oledDisplay.drawBox(barX + 1, barY + 1, fillWidth, barHeight - 2);
+        }
 
         // I'm pretty sure this will return false once the entire image is generated 
         // tho need to fully confirm
