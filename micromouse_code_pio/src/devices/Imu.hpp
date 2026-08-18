@@ -63,16 +63,32 @@ public:
         customAngleZ = 0.0;
     }
 
-    void fullReset() {
-        // Delay to first ensures its in a position of stopping
-        // delay(500);
+    // Recalculates the gyro offsets so the drift rate starts again from zero,
+    // WITHOUT touching the integrated heading. Blocks for about 1.8s and the
+    // robot must be stationary for all of it.
+    //
+    // This is the half of fullReset() that is safe to call mid-run. calcOffsets
+    // only rewrites the offsets it subtracts from the raw rates; customAngleZ is
+    // ours and it does not see it, so the absolute heading survives.
+    void recalibrateGyro() {
+        // Let the robot come fully to rest first - offsets calculated while it
+        // is still settling bake that motion in as a permanent bias.
         delay(800);
 
-        // Start full reseting
-        
         mpu.calcOffsets();
-        resetHeading();
+
+        // A second of calcOffsets passed with nothing integrating. Without this
+        // the next update() would multiply the current rate by that whole gap.
         lastUpdateTime = millis();
+    }
+
+    // Recalibrate AND zero the heading. Only safe when nothing is holding an
+    // absolute heading across the call - it makes wherever the robot happens to
+    // be pointing the new zero, error included. Task 4.3 holds one, so it uses
+    // recalibrateGyro().
+    void fullReset() {
+        recalibrateGyro();
+        resetHeading();
     }
 
     // Current yaw in degrees. Free-running: it is not wrapped to +/-180.

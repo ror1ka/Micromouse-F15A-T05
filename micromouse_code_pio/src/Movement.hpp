@@ -176,7 +176,7 @@ public:
         drive.resetEnc();
         imu.update();
 
-        const float baseHeading = getRot();
+        const float baseHeading = driveBaseHeading();
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
         unsigned long previousLoopTime = millis();
@@ -308,7 +308,7 @@ public:
         // steering start the move with real numbers rather than the last move's.
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        const float baseHeading = driveBaseHeading();
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
         // Offset applied to baseHeading, in degrees. +ve steers left.
@@ -545,7 +545,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        const float baseHeading = driveBaseHeading();
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
@@ -757,7 +757,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        const float baseHeading = driveBaseHeading();
         const float odometryZero = drive.getCurrAvgDist();
 
         bool handedOver = false;
@@ -931,7 +931,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = getRot();
+        const float baseHeading = driveBaseHeading();
         const float odometryZero = drive.getCurrAvgDist();
 
         float wallTrim = 0.0f;
@@ -1117,8 +1117,35 @@ public:
     // the absolute global heading so per-turn error does not accumulate over a
     // run - the same bookkeeping turnByAngle does.
     //
+    // The angle is added to the heading last COMMANDED, not to the one currently
+    // measured, and that is the whole point: a turn that settled 1.2 degrees
+    // inside the deadband, or coasted a degree past it after the motors cut,
+    // leaves the robot off the commanded heading, and this turn takes that
+    // residual out instead of inheriting it. Adding to the measured heading
+    // instead makes every such residual permanent, and 40 turns of mapping then
+    // add up to tens of degrees of error - see the note in turnToHeadingProfiled.
+    //
     // maxTurningPWM should always be +ve; angleToTurn may be either sign.
     void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
+        turnToHeadingProfiled(targetGlobalHeading + angleToTurn, maxTurningPWM);
+    }
+
+    // Turn to an ABSOLUTE heading, in the frame initialiseGlobalHeading() seeded
+    // at startup, under a trapezoidal envelope.
+    //
+    // This is the one to call when the caller knows which way it wants to be
+    // pointing rather than how far it wants to rotate - which is every turn on a
+    // maze grid, where the only legal headings are four fixed ones. Asking for
+    // the heading rather than the rotation means the answer never depends on
+    // where the robot thought it was when the turn started, so nothing carries
+    // forward: TURN_LEFT/TURN_RIGHT's deliberate 1 degree of overshoot
+    // compensation, the settle deadband, and post-stop coast all stop being
+    // things that accumulate and become a bounded error on this turn alone.
+    //
+    // Feed it headings a quarter turn apart at most. A 180 degree error sits
+    // exactly on the wrap that normaliseAngle folds at, so its sign - and with
+    // it the direction the robot picks - is decided by noise. Two quarter turns.
+    void turnToHeadingProfiled(float absoluteHeading, int maxTurningPWM) {
         const float turnKp = 2.0f;
         // Left at zero deliberately. The decel ramp below already does the
         // damping a D term would, and an untuned D on a 10ms gyro sample is more
@@ -1142,11 +1169,9 @@ public:
         turnPid.zeroAndSetTarget(0.0f, 0.0f);
         turnPid.setLimits(0.0f, (float)MAX_PWM);
 
-        imu.resetHeading();
-
         imu.update();
         const float startHeading = imu.getAngleZCustom();
-        targetGlobalHeading = Imu::normaliseAngle(imu.getAngleZCustom() + angleToTurn);
+        targetGlobalHeading = Imu::normaliseAngle(absoluteHeading);
         maxTurningPWM = constrain(abs(maxTurningPWM), MIN_TURNING_PWM, MAX_PWM);
 
         unsigned long previousLoopTime = millis();
@@ -1295,7 +1320,46 @@ private:
     static constexpr float MIN_HALF_SPAN = 25.0f;
     static constexpr float MAX_HALF_SPAN = 80.0f;
 
+    // How far the measured heading may sit from the commanded one before a drive
+    // stops trying to steer the difference out. Comfortably above anything the
+    // turn deadband, coast and a move's worth of drift can add up to, and well
+    // below a quarter turn.
+    static constexpr float MAX_HEADING_RECOVERY = 20.0f;
+
     float getRot() { return imu.getAngleZCustom(); }
+
+    // The heading a drive should hold for its whole length.
+    //
+    // The COMMANDED heading, not the measured one, so the move spends its length
+    // taking out whatever the turn before it left behind rather than preserving
+    // it. Holding the measured heading is what let error survive a move: the
+    // turn ends a degree off, the drive faithfully holds that degree for 180mm,
+    // and the next turn starts from it. Together with turnToHeadingProfiled this
+    // closes the loop - every leg of the run is referenced to one frame that was
+    // fixed at startup.
+    //
+    // Unless the two have diverged too far to be a control error at all. Past
+    // MAX_HEADING_RECOVERY the robot has been picked up, pushed, or stalled
+    // against a wall with the gyro still integrating, and driving 180mm while
+    // steering out a gap that big does more damage than accepting where it is.
+    // Re-seed the frame from the measurement and carry on from there.
+    // Left to inline. Marking this noinline to save the five copies costs 76
+    // bytes rather than saving any - the same inversion the three cruise
+    // routines hit when they were split apart. Measure before "fixing" it.
+    float driveBaseHeading() {
+        const float measured = getRot();
+
+        // Stored unwrapped, unlike everywhere else that sets this. Wrapping it
+        // here cost 92 bytes of flash out of the ~200 spare, to save a handful of
+        // laps of normaliseAngle's `while` on a 10ms tick. getAngleZCustom() is a
+        // NET heading, not total rotation, so a maze run only winds it out to a
+        // few thousand degrees at worst - ten iterations, a few microseconds.
+        if (abs(Imu::normaliseAngle(targetGlobalHeading - measured)) > MAX_HEADING_RECOVERY) {
+            targetGlobalHeading = measured;
+        }
+
+        return targetGlobalHeading;
+    }
 
     // The trapezoid, shared by both profiled routines. Returns the largest
     // output allowed this tick: ramping up over the first `rampUp` of the move,

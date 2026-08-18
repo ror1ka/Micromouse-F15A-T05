@@ -264,26 +264,56 @@ inline void updatePoseRight(Pose& pose) {
     pose.heading = rightDirection(pose.heading);
 }
 
+// The grid direction the robot is physically pointing when the IMU reads zero.
+// Seeded once, from the start pose, by runTask4_3.
+//
+// initialiseGlobalHeading() zeroes the heading frame in setup(), before anything
+// has moved, so IMU zero IS the direction the robot was placed facing.
+static Direction gridHeadingReference = NORTH;
+
+// The absolute IMU heading, in degrees, at which the robot faces `direction`.
+//
+// Direction runs NORTH, EAST, SOUTH, WEST - one quarter turn clockwise per step
+// - and a clockwise turn is negative in the IMU frame, which is why TURN_RIGHT
+// is the negative one. So each step off the reference direction is -90.
+//
+// These are exact multiples of 90, deliberately, and NOT built out of
+// TURN_LEFT/TURN_RIGHT. Those are 89, a degree short on purpose to cancel the
+// overshoot of a turn measured from where the robot currently is. Targeting an
+// absolute heading removes the overshoot a different way - the controller keeps
+// running until it has settled on the real heading - so keeping the fudge would
+// be commanding a degree of error per turn and nothing would ever take it out.
+inline float headingForDirection(Direction direction) {
+    const int quarterTurnsClockwise =
+        (static_cast<int>(direction) - static_cast<int>(gridHeadingReference) + 4) % 4;
+
+    return Imu::normaliseAngle(-90.0f * quarterTurnsClockwise);
+}
+
 // Takes in a target direction (i.e north, south, etc.) and turns to it
+//
+// Each quarter is commanded as the absolute heading it ends on rather than as a
+// rotation, so a turn that settles inside the deadband or coasts past it is
+// corrected by the next turn instead of being carried for the rest of the run.
+// Turning a quarter at a time also keeps the heading error away from the +/-180
+// wrap, where a 180 degree turn's error has no well defined sign and the robot
+// can pick either direction from one tick to the next.
 inline void turnToDirection(Micromouse& mouse, Pose& pose, Direction targetDirection) {
     // Finds amount to turn (1 = 90 deg, 2 = 180 deg, etc.)
     int directionDiff = (static_cast<int>(targetDirection) - static_cast<int>(pose.heading) + 4)%4;
 
-    if (directionDiff == 1) {
-        // 90 degee turn right
-        mouse.turnByAngleProfiled(TURN_RIGHT, MAPPING_TURN_PWM);
-        updatePoseRight(pose);
-    } else if (directionDiff == 2) {
-        // 180 degree turn right
-        mouse.turnByAngleProfiled(TURN_RIGHT, MAPPING_TURN_PWM);
-        updatePoseRight(pose);
-        mouse.turnByAngleProfiled(TURN_RIGHT, MAPPING_TURN_PWM);
-        updatePoseRight(pose);
-    } else if (directionDiff == 3) {
-        // 90 degree turn left
-        mouse.turnByAngleProfiled(TURN_LEFT, MAPPING_TURN_PWM);
+    if (directionDiff == 3) {
+        // One quarter left, rather than three quarters right.
         updatePoseLeft(pose);
+        mouse.turnToHeadingProfiled(headingForDirection(pose.heading), MAPPING_TURN_PWM);
+    } else {
+        // 90 or 180 to the right, one quarter at a time.
+        for (int i = 0; i < directionDiff; i++) {
+            updatePoseRight(pose);
+            mouse.turnToHeadingProfiled(headingForDirection(pose.heading), MAPPING_TURN_PWM);
+        }
     }
+
     // Allows micromouse to settle
     delay(SETTLE_TIME);
 }
@@ -387,13 +417,22 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
             }
 
             //////////////////////// ADDED IMU RESET CODE
-            // A 3-wall cell is a useful stationary point to remove accumulated
-            // IMU drift and recalculate the gyro offsets.
+            // A 3-wall cell is a useful stationary point to recalculate the gyro
+            // offsets and start the drift rate again from zero.
+            //
+            // recalibrateGyro(), NOT fullReset(). fullReset() also zeroes the
+            // heading, which declares whatever the robot is pointing at right
+            // now to be the grid direction it believes it is facing. Any error
+            // standing at that moment becomes unmeasurable and permanent, every
+            // heading after it is referenced to the wrong frame, and the next
+            // dead end does it again from the new wrong frame. Recalibrating the
+            // offsets is the part that helps; zeroing the heading is the part
+            // that made the heading wrong and then kept it wrong.
             if (currentCellHasThreeWalls(maze, pose)) {
                 mouse.drive().stop();
-                mouse.imu().fullReset();
+                mouse.imu().recalibrateGyro();
 
-                // Serial.println(F("3-wall cell: IMU heading reset"));
+                // Serial.println(F("3-wall cell: gyro offsets recalculated"));
             }
             //// END ADDED IMU RESET CODE
         }
@@ -464,6 +503,12 @@ inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& 
         // Either the goal or start aren't in the maze
         return false;
     }
+
+    // Ties the grid to the IMU frame: the robot was placed facing startPose's
+    // heading, and setup() zeroed the frame there. Every turn for the rest of
+    // the run is referenced to this, so it has to be set before the first one.
+    gridHeadingReference = startPose.heading;
+
     ////// AUTONOMOUS MAPPING
     if (!mapEntireMaze(mouse, maze, planner, pose)) {
         return false;

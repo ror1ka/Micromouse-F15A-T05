@@ -43,10 +43,20 @@ constexpr uint16_t COUNTS_PER_REVOLUTION = 700;
 constexpr int LEFT = 1;
 constexpr int RIGHT = 2;
 
-// Nominal quarter turns. TURN_RIGHT is 89 rather than 90 to compensate for the
-// robot consistently overshooting to the right by about a degree.
-constexpr float TURN_LEFT = 89.0f;
-constexpr float TURN_RIGHT = -89.0f;
+// Nominal quarter turns.
+//
+// These were 89, a degree short on purpose, because turnByAngleProfiled used to
+// zero the IMU on entry and measure the turn from wherever the robot already
+// was - so the degree it consistently overshot by was permanent, and shaving a
+// degree off the command was the only way to cancel it.
+//
+// It now tracks an absolute heading and each turn takes out the residual of the
+// one before it, so the overshoot corrects itself and the fudge does not need
+// to exist. Worse, it cannot stay: subtracting a degree from every commanded
+// turn is exactly the accumulating error the absolute frame was added to
+// remove, only now it is deliberate. A quarter turn is 90.
+constexpr float TURN_LEFT = 90.0f;
+constexpr float TURN_RIGHT = -90.0f;
 
 // Angle (deg) remaining at which turnLeft/turnRight start scaling speed down.
 constexpr float ROT_ERR = 35.0f;

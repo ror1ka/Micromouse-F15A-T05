@@ -69,13 +69,17 @@ constexpr float MISSION_START_HEADING = 0.0f;
 
 // Runs a generated mission array.
 //
-// Heading bookkeeping: turnByAngleProfiled calls imu.resetHeading() on entry, so
-// the IMU carries no absolute heading between moves and there is nothing to ask
-// "which way am I facing in the maze". This function therefore keeps that itself,
-// accumulating every turn it commands. It tracks what was *asked for* rather than
-// what was achieved, which is exactly what 'S' needs: the residual between the
-// commanded heading and the grid is the part the mission knows about and can
-// correct. Drift beyond that is recovered by the first 'f' after the zone, whose
+// Heading bookkeeping: this function keeps its own accumulator of every turn it
+// commands, in the mission's frame rather than the IMU's. It tracks what was
+// *asked for* rather than what was achieved, which is exactly what 'S' needs -
+// the residual between the commanded heading and the grid is the part the
+// mission knows about and can correct.
+//
+// Movement now keeps an absolute heading of its own that agrees with this one
+// turn for turn, so the two are redundant. They diverge in one place: a turn
+// below MISSION_MIN_TURN is added here but never commanded, so Movement does not
+// see it. 'S' takes the difference back out at the handover, which is where it
+// matters. Drift beyond that is recovered by the first 'f' after the zone, whose
 // wall trim re-centres the robot in the corridor.
 inline void chainMission(Micromouse& mouse, const Command* mission, int count) {
     float heading = MISSION_START_HEADING;

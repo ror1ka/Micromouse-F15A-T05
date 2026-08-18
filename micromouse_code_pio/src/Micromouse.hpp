@@ -60,6 +60,12 @@ public:
   void turnByAngleProfiled(float angleToTurn, int maxTurningPWM) {
     motion.turnByAngleProfiled(angleToTurn, maxTurningPWM);
   }
+  // Turn to an absolute heading in the frame seeded by initialiseGlobalHeading().
+  // Prefer this over turnByAngleProfiled wherever the target is a fixed grid
+  // heading rather than a rotation - see the note on Movement's copy.
+  void turnToHeadingProfiled(float absoluteHeading, int maxTurningPWM) {
+    motion.turnToHeadingProfiled(absoluteHeading, maxTurningPWM);
+  }
   // As driveDistanceProfiled, but steers off the side LiDARs to stay centred in
   // the corridor and stops short of any wall it finds ahead.
   void driveDistanceProfiledLidar(float targetDistance, int maxPWM) {
