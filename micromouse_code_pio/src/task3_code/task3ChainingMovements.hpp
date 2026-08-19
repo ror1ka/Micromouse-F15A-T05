@@ -9,8 +9,8 @@
 // One maze cell, in mm. Slightly over a cell width to account for the robot
 // consistently falling short.
 constexpr float CELL_DISTANCE = 180.0f;
-constexpr int CHAIN_DRIVE_PWM = 130;
-constexpr int CHAIN_TURN_PWM = 70;
+constexpr int CHAIN_DRIVE_PWM = 140;
+constexpr int CHAIN_TURN_PWM = 90;
 // Let the robot come to rest between commands before starting the next.
 constexpr unsigned long CHAIN_SETTLE_DELAY = 200;
 
@@ -59,7 +59,7 @@ inline void chainMovement(Micromouse& mouse, const String& chain_string) {
                 Serial.print(F(" forward x"));
                 Serial.println(cells);
 
-                mouse.driveDistanceCruiseFrontSeek(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
+                mouse.driveDistanceCruiseLidar(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
                 break;
             }
 

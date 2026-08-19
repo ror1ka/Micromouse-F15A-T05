@@ -1012,7 +1012,7 @@ public:
                 const float frontAllows =
                     frontTravelLimit() - (travelled - travelledAtFrontSample);
 
-                if (frontAllows <= FRONT_SEEK_WINDOW - FRONT_STOP_DISTANCE) {
+                if (useFrontSeek && frontAllows <= FRONT_SEEK_WINDOW - FRONT_STOP_DISTANCE) {
                     // A wall inside the seek band. It owns the end of the move in
                     // both directions now - the robot closes on the standoff even
                     // if that means running past the distance it was asked for.
