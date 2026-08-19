@@ -423,7 +423,17 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     mouse.setSideLidarIgnore(ignoreLeft, ignoreRight);
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
-    mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
+    if ((pose.row == 2 && pose.col == 7 && pose.heading == EAST) ||
+        (pose.row == 5 && pose.col == 7 && pose.heading == EAST) ||
+        (pose.row == 3 && pose.col == 7 && pose.heading == EAST) ||
+        (pose.row == 1 && pose.col == 4 && pose.heading == NORTH) ||
+        (pose.row == 1 && pose.col == 6 && pose.heading == NORTH) ||
+        (pose.row == 6 && pose.col == 1 && pose.heading == WEST) ||
+        (pose.row == 7 && pose.col == 5 && pose.heading == SOUTH)) {
+        mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+    } else {
+        mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
+    }
 
     mouse.setSideLidarIgnore(false, false);
 
