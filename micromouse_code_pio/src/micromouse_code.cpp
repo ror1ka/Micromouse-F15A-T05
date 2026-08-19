@@ -62,6 +62,23 @@ void setup() {
 // Set to true to run the hardware bring-up check instead of the maze run.
 
 void loop() {
+  // +ve = 90.38 (90.378) -- turn left 90 degrees
+  // -ve = 
+  int turnLeft = 90.378;
+  int turnRight = -90.37;
+  for (int i = 0; i < 16; i++) { mouse.turnByAngleProfiled(turnRight, 70); delay(300); }
+  int negative = 1;
+
+  for (int i = 0; i < 32; i++) { 
+    negative *= -1;
+    if (negative == 1) {
+      mouse.turnByAngleProfiled(turnLeft, 70); 
+    } else if (negative == -1) {
+      mouse.turnByAngleProfiled(turnRight, 70); 
+    }
+    delay(300); 
+  }
+  while (true) {}
   // for (int i = 0; i < 8; i++) { mouse.turnByAngleProfiled(45, 70); delay(300); }
   // while (true) {}
   // if (RUN_OLED_MOTION_TEST) {
