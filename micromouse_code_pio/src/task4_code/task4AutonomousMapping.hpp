@@ -300,7 +300,7 @@ inline float headingForDirection(Direction direction) {
     const int quarterTurnsClockwise =
         (static_cast<int>(direction) - static_cast<int>(gridHeadingReference) + 4) % 4;
 
-    return Imu::normaliseAngle(-90.0f * quarterTurnsClockwise);
+    return Imu::normaliseAngle(-90.5f * quarterTurnsClockwise);
 }
 
 // Takes in a target direction (i.e north, south, etc.) and turns to it
@@ -420,6 +420,24 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
         ignoreLeft = false;
         ignoreRight = true;   
     }
+    if (((pose.row == 8 && pose.col == 2) ||
+        (pose.row == 8 && pose.col == 3) ||
+        (pose.row == 8 && pose.col == 4) ||
+        (pose.row == 8 && pose.col == 5) ||
+        (pose.row == 8 && pose.col == 6)) && 
+        (pose.heading == EAST)) {
+        ignoreLeft = false;
+        ignoreRight = true;   
+    }
+    if (((pose.row == 8 && pose.col == 2) ||
+        (pose.row == 8 && pose.col == 3) ||
+        (pose.row == 8 && pose.col == 4) ||
+        (pose.row == 8 && pose.col == 5) ||
+        (pose.row == 8 && pose.col == 6)) && 
+        (pose.heading == WEST)) {
+        ignoreLeft = true;
+        ignoreRight = false;   
+    }
     mouse.setSideLidarIgnore(ignoreLeft, ignoreRight);
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
@@ -430,7 +448,7 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
         (pose.row == 1 && pose.col == 6 && pose.heading == NORTH) ||
         (pose.row == 6 && pose.col == 1 && pose.heading == WEST) ||
         (pose.row == 7 && pose.col == 5 && pose.heading == SOUTH)) {
-        mouse.driveDistanceCruiseLidar(180.0f, MAPPING_DRIVE_PWM);
+        mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM, false);
     } else {
         mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
     }

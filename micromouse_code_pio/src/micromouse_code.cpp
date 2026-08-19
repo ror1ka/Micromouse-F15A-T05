@@ -62,6 +62,8 @@ void setup() {
 // Set to true to run the hardware bring-up check instead of the maze run.
 
 void loop() {
+  // for (int i = 0; i < 8; i++) { mouse.turnByAngleProfiled(45, 70); delay(300); }
+  // while (true) {}
   // if (RUN_OLED_MOTION_TEST) {
   //   mouse.driveDistanceProfiled(180, 150);
   //   mouse.turnByAngleProfiled(90, 70);
