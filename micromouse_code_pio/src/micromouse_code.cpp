@@ -128,7 +128,7 @@ void loop() {
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
-  chainMovement(mouse, "ffffllffffrr");
+  chainMovement(mouse, "lfrflffrflfffflflfrflffrfffffrfffrfrflfflflfrfrfflflffflfrffrf");
  //chainMission(mouse, MISSION, NUM_COMMANDS);
   // mouse.printLidar();
 
@@ -140,5 +140,5 @@ void loop() {
   //   mouse.turnByAngle(-90, 70);
 
   // The run only happens once, so park here rather than repeating it.
-  // while (true) {}
+   while (true) {}
 }
