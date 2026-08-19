@@ -13,8 +13,6 @@
 #include "task4_code/task4AutonomousMapping.hpp"
 #include"task4_code/MazeAutonomousPlanner.hpp"
 
-constexpr unsigned long BAUD = 115200;
-
 // Used by travelDistance only; the PID routines carry their own gains. Passed as
 // a temporary rather than kept as a global - Micromouse takes it by value and
 // Movement keeps the only copy that is ever used, so a global here would be 64
@@ -42,7 +40,14 @@ bool task43HasRun = false;
 
 
 void setup() {
-  Serial.begin(BAUD);
+  // No Serial.begin. The 4.3 run has no diagnostic prints left in it, and
+  // opening the port anyway keeps HardwareSerial - its two ISRs, the vtable and
+  // therefore every virtual it declares, and the ring buffers - linked in, for
+  // about 600 bytes of flash and 77 of RAM that nothing then uses. The OLED is
+  // what reports during a run.
+  //
+  // Putting a print back means putting this line back with it, and finding the
+  // flash for both; see the size note in platformio.ini.
   Wire.begin();
 
   mouse.setupOled();
