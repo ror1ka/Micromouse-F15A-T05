@@ -176,7 +176,7 @@ public:
         drive.resetEnc();
         imu.update();
 
-        const float baseHeading = driveBaseHeading();
+        const float baseHeading = getRot();
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
         unsigned long previousLoopTime = millis();
@@ -308,7 +308,7 @@ public:
         // steering start the move with real numbers rather than the last move's.
         lidar.refreshAll();
 
-        const float baseHeading = driveBaseHeading();
+        const float baseHeading = getRot();
         distancePid.zeroAndSetTarget(drive.getCurrAvgDist(), targetDistance);
 
         // Offset applied to baseHeading, in degrees. +ve steers left.
@@ -545,7 +545,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = driveBaseHeading();
+        const float baseHeading = getRot();
         // Whatever resetEnc() left on the clock, so the PID measures from the same
         // origin as `travelled` when it is seeded partway through the move.
         const float odometryZero = drive.getCurrAvgDist();
@@ -757,7 +757,7 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = driveBaseHeading();
+        const float baseHeading = getRot();
         const float odometryZero = drive.getCurrAvgDist();
 
         bool handedOver = false;
@@ -931,7 +931,23 @@ public:
         imu.update();
         lidar.refreshAll();
 
-        const float baseHeading = driveBaseHeading();
+        // The MEASURED heading, so a move always starts with ~0 heading error.
+        //
+        // Do not "improve" this to the commanded heading (targetGlobalHeading).
+        // It was tried, on the reasoning that a move could spend its length
+        // taking out the residual the turn before it left behind. What actually
+        // happens is that the move starts with a real heading error, and the
+        // heading term is a differential on top of the drive term:
+        //
+        //     setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM)
+        //
+        // At the start of a move distancePWM is the soft-start floor, 40, while
+        // maxHeadingCorrection is 45. A few degrees of starting error is enough
+        // to drive one wheel BACKWARDS - the robot pivots on the spot, shuffles
+        // back and forth, and parallel-parks its way out of the cell instead of
+        // driving off. The turn is the right place to fix heading; a drive's job
+        // is to hold whatever the turn achieved.
+        const float baseHeading = getRot();
         const float odometryZero = drive.getCurrAvgDist();
 
         float wallTrim = 0.0f;
@@ -1320,53 +1336,8 @@ private:
     static constexpr float MIN_HALF_SPAN = 25.0f;
     static constexpr float MAX_HALF_SPAN = 80.0f;
 
-    // How far the measured heading may sit from the commanded one before a drive
-    // stops trying to steer the difference out, gives up on the frame and
-    // re-seeds it from the measurement.
-    //
-    // Kept tight, because this is the number that decides how hard the robot can
-    // swerve at the start of a move. A turn settles inside a 1.2 degree deadband,
-    // coasts about a degree past, and a move picks up a degree or so of drift, so
-    // a legitimate residual is a few degrees; 8 leaves room for a bad one. Beyond
-    // that the heading estimate is not slightly stale, it is wrong - and driving
-    // 180mm of corridor leaning 20 degrees to take out an error that was never
-    // really there is far worse than accepting where the robot is pointing.
-    static constexpr float MAX_HEADING_RECOVERY = 8.0f;
 
     float getRot() { return imu.getAngleZCustom(); }
-
-    // The heading a drive should hold for its whole length.
-    //
-    // The COMMANDED heading, not the measured one, so the move spends its length
-    // taking out whatever the turn before it left behind rather than preserving
-    // it. Holding the measured heading is what let error survive a move: the
-    // turn ends a degree off, the drive faithfully holds that degree for 180mm,
-    // and the next turn starts from it. Together with turnToHeadingProfiled this
-    // closes the loop - every leg of the run is referenced to one frame that was
-    // fixed at startup.
-    //
-    // Unless the two have diverged too far to be a control error at all. Past
-    // MAX_HEADING_RECOVERY the robot has been picked up, pushed, or stalled
-    // against a wall with the gyro still integrating, and driving 180mm while
-    // steering out a gap that big does more damage than accepting where it is.
-    // Re-seed the frame from the measurement and carry on from there.
-    // Left to inline. Marking this noinline to save the five copies costs 76
-    // bytes rather than saving any - the same inversion the three cruise
-    // routines hit when they were split apart. Measure before "fixing" it.
-    float driveBaseHeading() {
-        const float measured = getRot();
-
-        // Stored unwrapped, unlike everywhere else that sets this. Wrapping it
-        // here cost 92 bytes of flash out of the ~200 spare, to save a handful of
-        // laps of normaliseAngle's `while` on a 10ms tick. getAngleZCustom() is a
-        // NET heading, not total rotation, so a maze run only winds it out to a
-        // few thousand degrees at worst - ten iterations, a few microseconds.
-        if (abs(Imu::normaliseAngle(targetGlobalHeading - measured)) > MAX_HEADING_RECOVERY) {
-            targetGlobalHeading = measured;
-        }
-
-        return targetGlobalHeading;
-    }
 
     // The trapezoid, shared by both profiled routines. Returns the largest
     // output allowed this tick: ramping up over the first `rampUp` of the move,
