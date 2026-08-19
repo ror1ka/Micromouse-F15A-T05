@@ -365,29 +365,61 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     // const bool ignoreRight = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading,
     //                                                     rightDirection(pose.heading));
 
-    const Direction leftDir = leftDirection(pose.heading);
-    const Direction rightDir = rightDirection(pose.heading);
-    bool ignoreLeft = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading, leftDir);
-    bool ignoreRight = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading, rightDir);
+    /////// UNCOMMENT FOR THE AUTOMATIC DISABLING OF LIDAR
+    // const Direction leftDir = leftDirection(pose.heading);
+    // const Direction rightDir = rightDirection(pose.heading);
+    // bool ignoreLeft = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading, leftDir);
+    // bool ignoreRight = facesMazeBoundaryEitherEnd(maze, pose.row, pose.col, pose.heading, rightDir);
 
-    // Checks if current cell is at the outer edge and which side (left/right) faces outward
-    // and disables the lidar tracking on that side if there's no wall on the starting position
-    // and if there is a wall then it's safe to use lidar tracking
-    if (cellFacesMazeBoundary(maze, pose.row, pose.col, leftDir)) {
-        if (confirmOuterBoundaryWall(mouse, LidarArray::Left)) {
-            ignoreLeft = false;
-        } else {
-            ignoreLeft = true;
-        }
-    }
-    if (cellFacesMazeBoundary(maze, pose.row, pose.col, rightDir)) {
-        if (confirmOuterBoundaryWall(mouse, LidarArray::Right)) {
-            ignoreRight = false;
-        } else {
-            ignoreRight = true;
-        }
-    }
+    // // Checks if current cell is at the outer edge and which side (left/right) faces outward
+    // // and disables the lidar tracking on that side if there's no wall on the starting position
+    // // and if there is a wall then it's safe to use lidar tracking
+    // if (cellFacesMazeBoundary(maze, pose.row, pose.col, leftDir)) {
+    //     if (confirmOuterBoundaryWall(mouse, LidarArray::Left)) {
+    //         ignoreLeft = false;
+    //     } else {
+    //         ignoreLeft = true;
+    //     }
+    // }
+    // if (cellFacesMazeBoundary(maze, pose.row, pose.col, rightDir)) {
+    //     if (confirmOuterBoundaryWall(mouse, LidarArray::Right)) {
+    //         ignoreRight = false;
+    //     } else {
+    //         ignoreRight = true;
+    //     }
+    // }
+    //////// END OF UNCOMMENT
 
+    bool ignoreRight = false;
+    bool ignoreLeft = false;
+    if (((pose.row == 4 && pose.col == 0) ||
+        (pose.row == 5 && pose.col == 0)) &&
+        (pose.heading == SOUTH)) {
+        ignoreRight = true;
+        ignoreLeft = false;
+    }
+    if (((pose.row == 5 && pose.col == 0) ||
+        (pose.row == 6 && pose.col == 0)) &&
+        (pose.heading == NORTH)) {
+        ignoreRight = false;
+        ignoreLeft = true;
+    }
+    if (((pose.row == 2 && pose.col == 8) ||
+        (pose.row == 3 && pose.col == 8) ||
+        (pose.row == 4 && pose.col == 8) ||
+        (pose.row == 5 && pose.col == 8)) && 
+        (pose.heading == SOUTH)) {
+        ignoreLeft = true;
+        ignoreRight = false;   
+    }
+    if (((pose.row == 2 && pose.col == 8) ||
+        (pose.row == 3 && pose.col == 8) ||
+        (pose.row == 4 && pose.col == 8) ||
+        (pose.row == 5 && pose.col == 8)) && 
+        (pose.heading == NORTH)) {
+        ignoreLeft = false;
+        ignoreRight = true;   
+    }
     mouse.setSideLidarIgnore(ignoreLeft, ignoreRight);
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
