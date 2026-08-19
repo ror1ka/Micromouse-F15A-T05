@@ -5,6 +5,11 @@
 
 constexpr uint8_t INFINITE = 0xFF;
 
+enum TraversalMode : uint8_t {
+    ALLOW_UNKNOWN,  // Treat an unsensed wall as open - optimistic, for exploring toward the goal.
+    KNOWN_ONLY      // Only use walls confirmed open - a route the robot could actually drive right now.
+};
+
 class MazeAutonomousPlanner {
     public:
         // Flood fill algorithm, returns false if not a valid target cell. Starts at target and 
@@ -57,6 +62,153 @@ class MazeAutonomousPlanner {
                 }
             }
             return true;
+        }
+
+        // Same as floodFill(maze, targetRow, targetCol), but the caller
+        // chooses whether an unsensed (UNKNOWN) wall counts as passable.
+        // ALLOW_UNKNOWN matches what floodFill() above always did. KNOWN_ONLY
+        // only trusts walls actually confirmed open - the distance it
+        // reports is a route the robot could physically drive right now.
+        bool floodFill(MazeMap& maze, int targetRow, int targetCol, TraversalMode mode) {
+            for (uint8_t i = 0; i < NUM_CELLS; i++) {
+                distance[i] = INFINITE;
+            }
+            if (!maze.inMaze(targetRow, targetCol)) {
+                return false;
+            }
+
+            uint8_t head = 0;
+            uint8_t tail = 0;
+
+            uint8_t targetIndex = targetRow * MAZE_WIDTH + targetCol;
+            distance[targetIndex] = 0;
+            queue[tail] = targetIndex;
+            tail++;
+            while (head < tail) {
+                uint8_t currIndex = queue[head];
+                head++;
+
+                int row = currIndex / MAZE_WIDTH;
+                int col = currIndex % MAZE_WIDTH;
+
+                for (uint8_t currDir = 0; currDir < 4; currDir++) {
+                    Direction currDirection = static_cast<Direction>(currDir);
+                    int neighbourRow;
+                    int neighbourCol;
+                    if (!maze.updateNeighbour(row, col, currDirection, neighbourRow, neighbourCol)) {
+                        continue;
+                    }
+                    WallState currWall = maze.getWallState(row, col, currDirection);
+                    if (currWall == WALL) {
+                        continue;
+                    }
+                    if (mode == KNOWN_ONLY && currWall == UNKNOWN) {
+                        continue;
+                    }
+
+                    uint8_t neighbourIndex = neighbourRow * MAZE_WIDTH + neighbourCol;
+                    if (distance[neighbourIndex] == INFINITE) {
+                        distance[neighbourIndex] = distance[currIndex] + 1;
+                        queue[tail] = neighbourIndex;
+                        tail++;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // Same idea as getBestDirectionToMove(maze, pose, bestDirection), but
+        // in ALLOW_UNKNOWN mode it also breaks ties in favour of cells not
+        // yet sensed, and of walls already confirmed open over ones only
+        // assumed open - so exploration heads toward new information along
+        // the currently-shortest-looking route to the goal, instead of
+        // wandering to whichever unvisited cell happens to be nearest.
+        bool getBestDirectionToMove(MazeMap& maze, Pose& pose, TraversalMode mode, Direction& bestDirection) {
+            uint8_t currDist = getDistance(pose.row, pose.col);
+
+            if (currDist == INFINITE || currDist == 0) {
+                return false;
+            }
+            bool foundDirection = false;
+            uint8_t bestPriority = INFINITE;
+            for (uint8_t i = 0; i < 4; i++) {
+                Direction currDirection = static_cast<Direction>(i);
+                int neighbourRow;
+                int neighbourCol;
+                if (!maze.updateNeighbour(pose.row, pose.col, currDirection, neighbourRow, neighbourCol)) {
+                    continue;
+                }
+
+                WallState currWall = maze.getWallState(pose.row, pose.col, currDirection);
+                if (currWall == WALL) {
+                    continue;
+                }
+                if (mode == KNOWN_ONLY && currWall == UNKNOWN) {
+                    continue;
+                }
+
+                uint8_t neighbourDist = getDistance(neighbourRow, neighbourCol);
+                if (neighbourDist == INFINITE) {
+                    continue;
+                }
+                if (neighbourDist != currDist - 1) {
+                    continue;
+                }
+
+                uint8_t directionPriority = 3;
+                uint8_t directionDifference = (static_cast<uint8_t>(currDirection) - static_cast<uint8_t>(pose.heading) + 4) % 4;
+                if (directionDifference == 0) {
+                    directionPriority = 0;
+                } else if (directionDifference == 3) {
+                    directionPriority = 1;
+                } else if (directionDifference == 1) {
+                    directionPriority = 2;
+                }
+
+                if (mode == ALLOW_UNKNOWN) {
+                    // Heavily prefer a neighbour we haven't actually sensed yet.
+                    if (maze.hasBeenVisited(neighbourRow, neighbourCol)) {
+                        directionPriority += 8;
+                    }
+                    // Between two unvisited options, prefer stepping through a
+                    // wall already confirmed open over one taken on faith.
+                    if (currWall == UNKNOWN) {
+                        directionPriority += 4;
+                    }
+                }
+
+                if (!foundDirection || directionPriority < bestPriority) {
+                    bestPriority = directionPriority;
+                    bestDirection = currDirection;
+                    foundDirection = true;
+                }
+            }
+            return foundDirection;
+        }
+
+        // True once the shortest path from start to goal is provably known:
+        // the best route using only CONFIRMED-open walls already matches the
+        // best route theoretically possible if every still-unknown wall
+        // turned out to be open too. Since unknown walls can only make a
+        // route worse or leave it unchanged, never better, no unexplored
+        // region can be hiding a shortcut once these two agree.
+        bool shortestPathProven(MazeMap& maze, int startRow, int startCol, int goalRow, int goalCol,
+                                 uint8_t& optimisticDistance, uint8_t& confirmedDistance) {
+            if (!floodFill(maze, goalRow, goalCol, KNOWN_ONLY)) {
+                confirmedDistance = INFINITE;
+                optimisticDistance = INFINITE;
+                return false;
+            }
+            confirmedDistance = getDistance(startRow, startCol);
+
+            if (!floodFill(maze, goalRow, goalCol, ALLOW_UNKNOWN)) {
+                optimisticDistance = INFINITE;
+                return false;
+            }
+            optimisticDistance = getDistance(startRow, startCol);
+
+            return optimisticDistance != INFINITE && confirmedDistance != INFINITE &&
+                   optimisticDistance == confirmedDistance;
         }
 
         // Returns distance from target to a given cell

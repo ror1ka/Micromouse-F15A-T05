@@ -46,8 +46,8 @@ static constexpr float DEADBAND_THRESHOLD = 0.5;
 // Do NOT go back to correcting it by shaving degrees off TURN_LEFT/TURN_RIGHT.
 // That fixes one turn in isolation and leaves a per-turn error the absolute
 // heading frame can neither see nor take out.
-static constexpr float GYRO_SCALE = (90.0f / 89.0f)*((360+0.7)/360);
-// static constexpr float GYRO_SCALE = (90.0f / 89.0f);
+// static constexpr float GYRO_SCALE = (90.0f / 89.0f)*((360+0.7)/360);
+static constexpr float GYRO_SCALE = (90.0f / 89.0f);
 
 
 // Longest gap between update() calls, in ms, that still describes motion the

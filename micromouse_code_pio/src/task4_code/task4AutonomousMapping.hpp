@@ -59,6 +59,34 @@ enum MoveResult : uint8_t {
 // }
 ////// END OF IMU ONLY CODE
 
+// Returns the absolute heading (e.g north) of turning left from the current heading
+inline Direction leftDirection(Direction currDirection) {
+    if (currDirection == NORTH) {
+        return WEST;
+    } else if (currDirection == WEST) {
+        return SOUTH;
+    } else if (currDirection == SOUTH) {
+        return EAST;
+    } else if (currDirection == EAST) {
+        return NORTH;
+    }
+    return NORTH;
+}
+
+// Returns the absolute heading (e.g north) of turning right from the current heading
+inline Direction rightDirection(Direction currDirection) {
+    if (currDirection == NORTH) {
+        return EAST;
+    } else if (currDirection == EAST) {
+        return SOUTH;
+    } else if (currDirection == SOUTH) {
+        return WEST;
+    } else if (currDirection == WEST) {
+        return NORTH;
+    }
+    return NORTH;
+}
+
 ///// ADDED OUTER-BOUNDARY LIDAR MASK CODE
 inline bool cellFacesMazeBoundary(MazeMap& maze, int row, int col, Direction side) {
     int neighbourRow, neighbourCol;
@@ -108,13 +136,21 @@ inline bool facesMazeBoundaryEitherEnd(MazeMap& maze, int row, int col,
 
 ///// ADDED RESET IMU CODE
 inline bool currentCellHasThreeWalls(MazeMap& maze, const Pose& pose) {
-    uint8_t wallCount = 0;
+    const Direction front = pose.heading;
+    const Direction left = leftDirection(pose.heading);
+    const Direction right = rightDirection(pose.heading);
 
-    if (maze.getWallState(pose.row, pose.col, NORTH) == WALL) wallCount++;
-    if (maze.getWallState(pose.row, pose.col, EAST)  == WALL) wallCount++;
-    if (maze.getWallState(pose.row, pose.col, SOUTH) == WALL) wallCount++;
-    if (maze.getWallState(pose.row, pose.col, WEST)  == WALL) wallCount++;
-    return wallCount == 3;
+    return maze.getWallState(pose.row, pose.col, front) == WALL &&
+           maze.getWallState(pose.row, pose.col, left) == WALL &&
+           maze.getWallState(pose.row, pose.col, right) == WALL;
+    
+    // uint8_t wallCount = 0;
+
+    // if (maze.getWallState(pose.row, pose.col, NORTH) == WALL) wallCount++;
+    // if (maze.getWallState(pose.row, pose.col, EAST)  == WALL) wallCount++;
+    // if (maze.getWallState(pose.row, pose.col, SOUTH) == WALL) wallCount++;
+    // if (maze.getWallState(pose.row, pose.col, WEST)  == WALL) wallCount++;
+    // return wallCount == 3;
     
     // uint8_t LidarWallCount = 0;
     // int frontLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Front);
@@ -127,35 +163,6 @@ inline bool currentCellHasThreeWalls(MazeMap& maze, const Pose& pose) {
 
 }
 ///// ENDED REST IMU CODE
-
-
-// Returns the absolute heading (e.g north) of turning right from the current heading
-inline Direction rightDirection(Direction currDirection) {
-    if (currDirection == NORTH) {
-        return EAST;
-    } else if (currDirection == EAST) {
-        return SOUTH;
-    } else if (currDirection == SOUTH) {
-        return WEST;
-    } else if (currDirection == WEST) {
-        return NORTH;
-    }
-    return NORTH;
-}
-
-// Returns the absolute heading (e.g north) of turning left from the current heading
-inline Direction leftDirection(Direction currDirection) {
-    if (currDirection == NORTH) {
-        return WEST;
-    } else if (currDirection == WEST) {
-        return SOUTH;
-    } else if (currDirection == SOUTH) {
-        return EAST;
-    } else if (currDirection == EAST) {
-        return NORTH;
-    }
-    return NORTH;
-}
 
 // Returns the absolute heading (e.g north) of turning in the opposite direction 
 // from the current heading
@@ -300,7 +307,7 @@ inline float headingForDirection(Direction direction) {
     const int quarterTurnsClockwise =
         (static_cast<int>(direction) - static_cast<int>(gridHeadingReference) + 4) % 4;
 
-    return Imu::normaliseAngle(-90.5f * quarterTurnsClockwise);
+    return Imu::normaliseAngle(-90.0f * quarterTurnsClockwise);
 }
 
 // Takes in a target direction (i.e north, south, etc.) and turns to it
@@ -356,6 +363,12 @@ inline MoveResult moveToNeighbour(Micromouse& mouse, MazeMap& maze, Pose& pose, 
     if (maze.getWallState(pose.row, pose.col, pose.heading) != NO_WALL) {
         return MOVE_BLOCKED;
     }
+
+    // The front LiDAR has physically confirmed that this edge is open.
+    // Record the open edge in both directions so flood fill can traverse it
+    // regardless of which end it starts from.
+    maze.setWallState(pose.row, pose.col, pose.heading, NO_WALL);
+    maze.setWallState(nextRow, nextCol, oppositeDirection(pose.heading), NO_WALL);
 
     // Moves into the neighbour cell -- UNCOMMENT THIS:
     // mouse.driveDistanceCruiseFrontSeek(180.0f, MAPPING_DRIVE_PWM);
@@ -547,30 +560,116 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
     }
 }
 
-inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, int targetRow, int targetCol) {
+// Explores toward the goal, prioritising genuinely new cells, until the
+// shortest path from startPose to the goal is PROVEN optimal (see
+// MazeAutonomousPlanner::shortestPathProven) - not until the whole maze has
+// been mapped.
+inline bool exploreUntilShortestPathFound(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner,
+                                           Pose& pose, const Pose& startPose, int targetRow, int targetCol) {
+    while (true) {
+        if (!maze.hasBeenVisited(pose.row, pose.col)) {
+            if (!senseCurrentCell(mouse, maze, pose)) {
+                delay(SETTLE_TIME);
+                continue;
+            }
+
+            if (currentCellHasThreeWalls(maze, pose)) {
+                mouse.drive().stop();
+                mouse.imu().recalibrateGyro();
+            }
+        }
+
+        drawMazeOled(mouse, maze, pose);
+
+        uint8_t optimisticDist, confirmedDist;
+        if (planner.shortestPathProven(maze, startPose.row, startPose.col, targetRow, targetCol,
+                                        optimisticDist, confirmedDist)) {
+            return true;
+        }
+
+        // We have reached the goal, but the shortest path has NOT yet been proven.
+        // Therefore we must leave the goal and continue exploring.
+        //
+        // Flood fill from all unvisited cells so that the robot can backtrack
+        // through known/unknown-open cells to the nearest unexplored region.
+        if (pose.row == targetRow && pose.col == targetCol) {
+            if (!planner.floodFillToNearestUnvisited(maze)) {
+                // No unvisited cells remain. If shortestPathProven() above was
+                // false, there is no further exploration target.
+                return false;
+            }
+
+            if (planner.getDistance(pose.row, pose.col) == INFINITE) {
+                return false;
+            }
+
+            Direction nextDirection;
+
+            if (!planner.getBestDirectionToMove(maze, pose, nextDirection)) {
+                return false;
+            }
+
+            MoveResult resultFromMovingForward =
+                moveToNeighbour(mouse, maze, pose, nextDirection);
+
+            if (resultFromMovingForward == MOVE_SUCCESS ||
+                resultFromMovingForward == MOVE_BLOCKED ||
+                resultFromMovingForward == MOVE_SENSOR_ERROR) {
+                continue;
+            }
+
+            return false;
+        }
+
+        // Not proven yet - flood fill from the goal, optimistic about
+        // unknown walls, and head toward whichever neighbour makes progress.
+        if (!planner.floodFill(maze, targetRow, targetCol, ALLOW_UNKNOWN)) {
+            return false;
+        }
+
+        if (planner.getDistance(pose.row, pose.col) == INFINITE) {
+            // Even optimistically the goal is unreachable from here - the
+            // maze must be disconnected. No amount of exploring fixes that.
+            return false;
+        }
+
+        Direction nextDirection;
+        if (!planner.getBestDirectionToMove(maze, pose, ALLOW_UNKNOWN, nextDirection)) {
+            return false;
+        }
+
+        MoveResult resultFromMovingForward = moveToNeighbour(mouse, maze, pose, nextDirection);
+
+        if (resultFromMovingForward == MOVE_SUCCESS || resultFromMovingForward == MOVE_BLOCKED || resultFromMovingForward == MOVE_SENSOR_ERROR) {
+            continue;
+        } else {
+            return false;
+        }
+    }
+}
+
+inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose,
+                            int targetRow, int targetCol, TraversalMode mode) {
     if (!maze.inMaze(targetRow, targetCol)) {
         return false;
     }
     while (pose.row != targetRow || pose.col != targetCol) {
-        if (!planner.floodFill(maze, targetRow, targetCol)) {
+        if (!planner.floodFill(maze, targetRow, targetCol, mode)) {
             return false;
         }
         if (planner.getDistance(pose.row, pose.col) == INFINITE) {
-            // Can't reach target
             return false;
         }
         Direction directionToTurnTo;
-        if (!planner.getBestDirectionToMove(maze, pose, directionToTurnTo)) {
+        if (!planner.getBestDirectionToMove(maze, pose, mode, directionToTurnTo)) {
             return false;
         }
 
         MoveResult resultFromForwardMovement = moveToNeighbour(mouse, maze, pose, directionToTurnTo);
         if (resultFromForwardMovement == MOVE_BLOCKED || resultFromForwardMovement == MOVE_SENSOR_ERROR) {
-            // New wall, replan
             continue;
         }
         if (resultFromForwardMovement != MOVE_SUCCESS) {
-            // error during movement
             return false;
         }
         drawMazeOled(mouse, maze, pose);
@@ -580,32 +679,28 @@ inline bool navigateToCell(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlann
 
 inline bool runTask4_3(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanner& planner, Pose& pose, Pose startPose, int targetRow, int targetCol) {
     if (!maze.inMaze(targetRow, targetCol) || !maze.inMaze(startPose.row, startPose.col) || !maze.inMaze(pose.row, pose.col)) {
-        // Either the goal or start aren't in the maze
         return false;
     }
 
-    // Ties the grid to the IMU frame: the robot was placed facing startPose's
-    // heading, and setup() zeroed the frame there. Every turn for the rest of
-    // the run is referenced to this, so it has to be set before the first one.
     gridHeadingReference = startPose.heading;
 
-    ////// AUTONOMOUS MAPPING
-    if (!mapEntireMaze(mouse, maze, planner, pose)) {
+    ////// EXPLORE UNTIL THE SHORTEST PATH IS PROVEN (not a full map)
+    if (!exploreUntilShortestPathFound(mouse, maze, planner, pose, startPose, targetRow, targetCol)) {
         return false;
     }
 
     ////// RETURN TO START
-    if (!navigateToCell(mouse, maze, planner, pose, startPose.row, startPose.col)) {
+    if (!navigateToCell(mouse, maze, planner, pose, startPose.row, startPose.col, KNOWN_ONLY)) {
         return false;
     }
-    // Turn to original heading
     turnToDirection(mouse, pose, startPose.heading);
     drawMazeOled(mouse, maze, pose);
 
     delay(500);
 
-    ////// Shortest path run
-    if (!navigateToCell(mouse, maze, planner, pose, targetRow, targetCol)) {
+    ////// Shortest path run - KNOWN_ONLY, since exploreUntilShortestPathFound()
+    ////// only just proved a fully-confirmed route of optimal length exists.
+    if (!navigateToCell(mouse, maze, planner, pose, targetRow, targetCol, KNOWN_ONLY)) {
         return false;
     }
     drawMazeOled(mouse, maze, pose);
