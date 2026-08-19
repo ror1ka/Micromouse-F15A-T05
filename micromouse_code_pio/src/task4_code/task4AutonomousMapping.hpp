@@ -12,6 +12,10 @@ constexpr int MAPPING_TURN_PWM = 70;
 constexpr int MAPPING_DRIVE_PWM = 130;
 constexpr int SETTLE_TIME = 100;
 
+// Constants for manually tuned turnToDirection function
+constexpr float TASK43_TURN_RIGHT_90 = 90.47f;
+constexpr float TASK43_TURN_LEFT_90  = 90.378f;
+
 constexpr int OUTER_WALL_CONFIRM_MIN = 20;
 constexpr int OUTER_WALL_CONFIRM_MAX = 70;
 
@@ -318,6 +322,8 @@ inline float headingForDirection(Direction direction) {
 // Turning a quarter at a time also keeps the heading error away from the +/-180
 // wrap, where a 180 degree turn's error has no well defined sign and the robot
 // can pick either direction from one tick to the next.
+
+////// UNCOMMENT TO FIX OLD TURNING
 inline void turnToDirection(Micromouse& mouse, Pose& pose, Direction targetDirection) {
     // Finds amount to turn (1 = 90 deg, 2 = 180 deg, etc.)
     int directionDiff = (static_cast<int>(targetDirection) - static_cast<int>(pose.heading) + 4)%4;
@@ -337,6 +343,54 @@ inline void turnToDirection(Micromouse& mouse, Pose& pose, Direction targetDirec
     // Allows micromouse to settle
     delay(SETTLE_TIME);
 }
+
+//////// TURNING WITH CALIBRATED CONSTANTS
+// inline void turnToDirection(Micromouse& mouse,
+//                             Pose& pose,
+//                             Direction targetDirection) {
+
+//     const int directionDiff =
+//         (static_cast<int>(targetDirection) -
+//          static_cast<int>(pose.heading) + 4) % 4;
+
+//     if (directionDiff == 1) {
+
+//         // 90° RIGHT
+//         mouse.turnByAngleProfiled(
+//             -TASK43_TURN_RIGHT_90,
+//             MAPPING_TURN_PWM
+//         );
+
+//         updatePoseRight(pose);
+
+//     } else if (directionDiff == 2) {
+
+//         // 180° = two 90° RIGHT turns
+//         mouse.turnByAngleProfiled(
+//             -TASK43_TURN_RIGHT_90,
+//             MAPPING_TURN_PWM
+//         );
+//         updatePoseRight(pose);
+
+//         mouse.turnByAngleProfiled(
+//             -TASK43_TURN_RIGHT_90,
+//             MAPPING_TURN_PWM
+//         );
+//         updatePoseRight(pose);
+
+//     } else if (directionDiff == 3) {
+
+//         // 90° LEFT
+//         mouse.turnByAngleProfiled(
+//             TASK43_TURN_LEFT_90,
+//             MAPPING_TURN_PWM
+//         );
+
+//         updatePoseLeft(pose);
+//     }
+
+//     delay(SETTLE_TIME);
+// }
 
 // Moves micromouse into neighbour cell in given direction if there's no wall. If there's a 
 // wall it returns false. Returns true if successfully moves into it
