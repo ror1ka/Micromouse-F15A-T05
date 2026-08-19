@@ -59,7 +59,7 @@ inline void chainMovement(Micromouse& mouse, const String& chain_string) {
                 Serial.print(F(" forward x"));
                 Serial.println(cells);
 
-                mouse.driveDistanceProfiledLidar(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
+                mouse.driveDistanceCruiseFrontSeek(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
                 break;
             }
 
