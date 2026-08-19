@@ -110,25 +110,15 @@ void loop() {
   // }
 
   // task43HasRun = true;
-  // runTask4_3(
-  //     mouse,
-  //     maze,
-  //     planner,
-  //     pose,
-  //     startPose,
-  //     7,
-  //     7
-  // );
-  // while(true) {
-
-  // }
+  runTask4_3(mouse, maze, planner, pose, startPose, 7, 7);
+  while(true) {}
 
   // mouse.printLidarToOled();
 
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
-  chainMovement(mouse, "ffffllffffrr");
+  // chainMovement(mouse, "ffffllffffrr");
  //chainMission(mouse, MISSION, NUM_COMMANDS);
   // mouse.printLidar();
 

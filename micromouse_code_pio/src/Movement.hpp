@@ -900,7 +900,26 @@ public:
     //
     // ONLY PASS A POSITIVE cruisePWM. Seeking is forward-only; a negative
     // targetDistance behaves as driveDistanceCruiseLidar.
-    void driveDistanceCruiseFrontSeek(float targetDistance, int cruisePWM) {
+    //
+    // `useFrontSeek` turns the seek off for one call, leaving everything else -
+    // the cruise, the wall trim, the front wall's power to cut a move SHORT -
+    // exactly as it is. That combination is precisely driveDistanceCruiseLidar,
+    // so this one function now covers both behaviours and callers can pick per
+    // move: `driveDistanceCruiseFrontSeek(180, pwm, false)` for a cell where
+    // re-registering on the wall ahead is unwanted.
+    //
+    // Do it with this flag rather than by calling driveDistanceCruiseLidar. The
+    // three cruise routines are separate ~200-line functions, and any one of them
+    // that nothing calls is stripped by the linker - so adding a call to a second
+    // one does not cost a branch, it costs the entire routine, about 3.7KB, which
+    // this firmware does not have. A runtime flag costs a compare.
+    //
+    // Marked noclone for the same reason: left alone, avr-gcc is free to notice
+    // the flag is a literal at every call site and specialise a copy per value,
+    // which quietly reinstates the second routine this was written to avoid.
+    __attribute__((noclone))
+    void driveDistanceCruiseFrontSeek(float targetDistance, int cruisePWM,
+                                      bool useFrontSeek = true) {
         PIDController distancePid(1.2f, 0.0f, 0.25f);
         const float headingKp = 2.0f;
 
