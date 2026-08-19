@@ -72,9 +72,6 @@ public:
         pid.compute(drive.getCurrAvgDist());
 
         while (pid.getError() > 0) {
-            Serial.println(String("Dist: ") + drive.getCurrAvgDist());
-            Serial.println(String("Err: ") + pid.getError());
-
             drive.move(speed, speed);
             pid.compute(drive.getCurrAvgDist());
         }
@@ -452,17 +449,6 @@ public:
 
                 if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
                     drive.stop();
-
-                    // The move ended on the wall rather than on the odometry, so
-                    // the robot is not where the caller asked it to be. Say so -
-                    // silently travelling less than requested is the sort of
-                    // thing that turns into a mystery three commands later.
-                    if (frontLimited) {
-                        Serial.print(F("front wall: stopped "));
-                        Serial.print(distanceError);
-                        Serial.println(F("mm short"));
-                    }
-
                     return;
                 }
             } else {
@@ -709,17 +695,6 @@ public:
 
                 if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
                     drive.stop();
-
-                    if (frontLimited) {
-                        // +ve stopped short of the commanded distance, -ve past it.
-                        // Truncated to an int deliberately: printing a float drags
-                        // in Print's double formatting, which is several hundred
-                        // bytes of flash this firmware has not got.
-                        Serial.print(F("front wall: ended "));
-                        Serial.print((int)distanceError);
-                        Serial.println(F("mm off target"));
-                    }
-
                     return;
                 }
             } else {
@@ -859,13 +834,6 @@ public:
 
                 if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
                     drive.stop();
-
-                    if (frontLimited) {
-                        Serial.print(F("front wall: ended "));
-                        Serial.print((int)distanceError);
-                        Serial.println(F("mm off target"));
-                    }
-
                     return;
                 }
             } else {
@@ -1133,13 +1101,6 @@ public:
                 // standoff drops back out of the deadband here and creeps again.
                 if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
                     drive.stop();
-
-                    if (frontLimited) {
-                        Serial.print(F("front wall: ended "));
-                        Serial.print((int)distanceError);
-                        Serial.println(F("mm off target"));
-                    }
-
                     return;
                 }
             } else {
@@ -1391,9 +1352,6 @@ private:
 
         while (dir * (target - getRot()) > 0) {
             imu.update();
-
-            // Debugging
-            imu.print();
 
             int16_t pwm = speed;
             // Past `err` the turn is nearly done, so taper with the angle left.

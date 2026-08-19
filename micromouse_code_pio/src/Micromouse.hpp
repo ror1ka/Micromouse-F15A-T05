@@ -134,8 +134,6 @@ public:
   Motor& getRightMotor() { return drivetrain.getRightMotor(); }
 
   //////// Debugging ////////
-  void printIMU() { imuSensor.print(); }
-  void printLidar() { lidarArray.print(); }
   void printMessageToOled(char* message) { oledDisplay.printMessage(64, 32, message); }
   void printLidarToOled() { oledDisplay.printLidar(
     getMedianDistance(LidarArray::Id::Front),

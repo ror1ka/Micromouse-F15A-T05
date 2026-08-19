@@ -41,14 +41,6 @@ public:
     // Returned by readResult() when out of range
     static constexpr int NO_TARGET = -2;
 
-    // The names are set here rather than in the initialiser below because F()
-    // expands to a statement-expression, which is only legal inside a function.
-    LidarArray() {
-        channels[Front].name = F("Front");
-        channels[Left].name = F("Left");
-        channels[Right].name = F("Right");
-    }
-
     void setup() {
         // Without this a sensor that browns out mid-transfer can leave SDA held
         // low, and every later I2C call blocks forever inside the Wire driver -
@@ -68,11 +60,6 @@ public:
         // Enable and assign addresses one at a time.
         for (uint8_t i = 0; i < Count; i++) {
             configure(channels[i]);
-
-            Serial.print(F("LiDAR on pin "));
-            Serial.print(channels[i].enablePin);
-            Serial.print(F(" assigned address 0x"));
-            Serial.println(channels[i].address, HEX);
         }
 
         // The first reading after power-up is slow, so give that one a long
@@ -82,8 +69,6 @@ public:
             channels[i].device.readRangeSingleMillimeters();
             channels[i].device.setTimeout(READ_TIMEOUT);
         }
-
-        Serial.println(F("All LiDARs initialised"));
     }
 
     //////// Non-blocking path, for control loops ////////
@@ -272,19 +257,6 @@ public:
         return readings[medianIndex];
     }
 
-    void print() {
-        Serial.print(F("Left: "));
-        Serial.print(readLeft());
-
-        Serial.print(F(" mm\tFront: "));
-        Serial.print(readFront());
-
-        Serial.print(F(" mm\tRight: "));
-        Serial.print(readRight());
-
-        Serial.println(F(" mm"));
-    }
-
 private:
     static constexpr uint16_t READ_TIMEOUT = 60;         // ms, blocking reads
     static constexpr uint16_t FIRST_READ_TIMEOUT = 1000; // ms
@@ -316,8 +288,6 @@ private:
         VL6180X device;
         uint8_t address;
         uint8_t enablePin;
-        // Set by the constructor; only used for diagnostic messages.
-        const __FlashStringHelper* name;
 
         // Last trustworthy measurement in mm, or NO_READING.
         int16_t reading;
@@ -326,11 +296,11 @@ private:
         unsigned long lastRecovery;
     };
 
-    // Indices must line up with Id. Names are filled in by the constructor.
+    // Indices must line up with Id.
     Channel channels[Count] = {
-        {{}, LIDAR_FRONT_ADDRESS, LIDAR_FRONT, nullptr, NO_READING, 0, 0, 0},
-        {{}, LIDAR_LEFT_ADDRESS,  LIDAR_LEFT,  nullptr, NO_READING, 0, 0, 0},
-        {{}, LIDAR_RIGHT_ADDRESS, LIDAR_RIGHT, nullptr, NO_READING, 0, 0, 0},
+        {{}, LIDAR_FRONT_ADDRESS, LIDAR_FRONT, NO_READING, 0, 0, 0},
+        {{}, LIDAR_LEFT_ADDRESS,  LIDAR_LEFT,  NO_READING, 0, 0, 0},
+        {{}, LIDAR_RIGHT_ADDRESS, LIDAR_RIGHT, NO_READING, 0, 0, 0},
     };
 
     // Sampler state. `active` is the sensor currently measuring, or the one
@@ -465,9 +435,6 @@ private:
         if (channel.lastRecovery != 0 && now - channel.lastRecovery < RECOVERY_INTERVAL) {
             return;
         }
-
-        Serial.print(channel.name);
-        Serial.println(F(" LiDAR not responding, re-initialising"));
 
         channel.lastRecovery = now;
         channel.consecutiveFailures = 0;

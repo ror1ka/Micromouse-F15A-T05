@@ -74,8 +74,6 @@ public:
     // a heading-controlled robot with no heading.
     void setup() {
         byte status = mpu.begin();
-        Serial.print(F("MPU6050 status: "));
-        Serial.println(status);
         while (status != 0) {}  // stop everything if could not connect to MPU6050
 
         Wire.beginTransmission(MPU6050_ADDRESS);
@@ -83,11 +81,10 @@ public:
         Wire.write(GYRO_RANGE_500_DPS);
         Wire.endTransmission();
 
-        Serial.println(F("Calculating offsets, do not move MPU6050"));
+        // The robot must be still and level for this.
         delay(1000);
         // mpu.upsideDownMounting = true;
         mpu.calcOffsets();  // gyro and accelero
-        Serial.println(F("Done!\n"));
 
         // Custom integration timer
         lastUpdateTime = millis();
@@ -175,11 +172,6 @@ public:
     // Custom Heading yaw in degrees. (Needs testing)
     float getAngleZCustom() {
         return customAngleZ;
-    }
-
-    void print() {
-        Serial.print(F("\tZ : "));
-        Serial.println(mpu.getAngleZ());
     }
 
     // Wraps an angle into [-180, 180]. Needed whenever two headings are
