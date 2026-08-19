@@ -16,15 +16,37 @@ static constexpr float DEADBAND_THRESHOLD = 0.5;
 // and nothing downstream can tell. It has to be corrected here, at the sensor,
 // because it skews the heading hold during drives too, not just turns.
 //
-// TO CALIBRATE: square the robot against a wall, mark its position, run four
-// turns the same way (`mouse.turnByAngleProfiled(90, 70)` x4, or 4 lefts through
-// chainMovement), and measure how far off 360 it finished. Overshot by N degrees
-// total means the gyro under-reads: multiply GYRO_SCALE by 360/(360+N). Repeat
-// the other way to confirm - a genuine scale error is symmetric, and one that is
-// not is a turn dynamics problem, not this. Do NOT correct it by shaving degrees
-// off TURN_LEFT/TURN_RIGHT; that is what used to be done, and it re-introduces a
-// per-turn error the absolute frame cannot see or take out.
-static constexpr float GYRO_SCALE = 1.0f;
+// Seeded from this project's own history rather than a guess. TURN_LEFT was 89
+// for a long time, tuned by hand until a commanded quarter turn came out as a
+// real 90 degrees. Read that backwards and it is a measurement of this constant:
+// the controller stops when the READING reaches the command, so
+//
+//     reading = k * physical,   physical = command / k
+//     90 physical from an 89 command  ->  k = 89/90 = 0.9889
+//
+// The gyro under-reports by about 1.1%. GYRO_SCALE has to undo that, so it is
+// 1/k = 90/89, slightly ABOVE 1 - it scales the readings up to match reality.
+//
+// This is why 89 "worked" and why it had to go. It cancelled the scale error for
+// turns and only for turns; the same 1.1% was still corrupting the heading hold
+// on every drive, where nothing compensated it. Fixing it here fixes both.
+//
+// TO VERIFY - this is a bench test on open floor and the robot never touches
+// anything. Put a strip of tape on the floor, stand the robot on it by hand with
+// its wheelbase lined up to the tape, and run four turns the same way
+// (`mouse.turnByAngleProfiled(90, 70)` x4). It ends where it started, having
+// rotated in place the whole time. Measure the angle between the wheelbase and
+// the tape: that is how far off 360 degrees it came out.
+//
+// Overshooting by N degrees means the gyro is still under-reporting: multiply
+// GYRO_SCALE by (360 + N) / 360. Undershooting makes N negative and the same
+// formula scales it back down. Repeat turning the other way - a genuine scale
+// error is symmetric, and one that is not is a turn dynamics problem, not this.
+//
+// Do NOT go back to correcting it by shaving degrees off TURN_LEFT/TURN_RIGHT.
+// That fixes one turn in isolation and leaves a per-turn error the absolute
+// heading frame can neither see nor take out.
+static constexpr float GYRO_SCALE = 90.0f / 89.0f;
 
 // Longest gap between update() calls, in ms, that still describes motion the
 // gyro actually watched. The control loops tick every 10ms, so a normal gap is
