@@ -15,6 +15,10 @@ constexpr int SETTLE_TIME = 100;
 constexpr int OUTER_WALL_CONFIRM_MIN = 20;
 constexpr int OUTER_WALL_CONFIRM_MAX = 70;
 
+constexpr int RUN_INTO_ROW = 10;
+constexpr int RUN_INTO_COL = 10;
+constexpr int SLOWEST_PWM = 40;
+
 //////// IMU ONLY CODE
 // struct Task43ImuCell {
 //     uint8_t row;
@@ -110,8 +114,17 @@ inline bool currentCellHasThreeWalls(MazeMap& maze, const Pose& pose) {
     if (maze.getWallState(pose.row, pose.col, EAST)  == WALL) wallCount++;
     if (maze.getWallState(pose.row, pose.col, SOUTH) == WALL) wallCount++;
     if (maze.getWallState(pose.row, pose.col, WEST)  == WALL) wallCount++;
-
     return wallCount == 3;
+    
+    // uint8_t LidarWallCount = 0;
+    // int frontLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Front);
+    // int leftLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Left);
+    // int rightLidarDistance = getCorrectMedianDistance(mouse, LidarArray::Right);
+    // if (frontLidarDistance > 0 && frontLidarDistance < WALL_DISTANCE_THRESHOLD) LidarWallCount++;
+    // if (leftLidarDistance > 0 && leftLidarDistance < WALL_DISTANCE_THRESHOLD) LidarWallCount++;
+    // if (rightLidarDistance > 0 && rightLidarDistance < WALL_DISTANCE_THRESHOLD) LidarWallCount++;
+    // return LidarWallCount == 3;
+
 }
 ///// ENDED REST IMU CODE
 
@@ -429,9 +442,16 @@ inline bool mapEntireMaze(Micromouse& mouse, MazeMap& maze, MazeAutonomousPlanne
             // offsets is the part that helps; zeroing the heading is the part
             // that made the heading wrong and then kept it wrong.
             if (currentCellHasThreeWalls(maze, pose)) {
+                // if (pose.row == RUN_INTO_ROW && pose.col == RUN_INTO_COL) {
+                //     // move forward into wall to try and fix position and reset
+                //     mouse.driveDistanceCruiseNoLidar(70.0f, SLOWEST_PWM);
+                // } 
                 mouse.drive().stop();
                 mouse.imu().recalibrateGyro();
-
+                // if (pose.row == RUN_INTO_ROW && pose.col == RUN_INTO_COL) {
+                //     // move back from the wall
+                //     mouse.driveDistanceCruiseNoLidar(-55.0f, SLOWEST_PWM);
+                // }
                 // Serial.println(F("3-wall cell: gyro offsets recalculated"));
             }
             //// END ADDED IMU RESET CODE
