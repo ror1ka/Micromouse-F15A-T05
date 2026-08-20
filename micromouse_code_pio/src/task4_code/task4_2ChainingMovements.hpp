@@ -41,18 +41,18 @@
 constexpr float MISSION_CELL_DISTANCE = 180.0f;
 
 // Corridor moves can afford to be quick - the wall trim is correcting them.
-constexpr int MISSION_DRIVE_PWM = 130;
-constexpr int MISSION_TURN_PWM = 70;
+constexpr int MISSION_DRIVE_PWM = 100;
+constexpr int MISSION_TURN_PWM = 60;
 
 // The zone runs slower. Nothing is correcting these moves except the heading
 // hold, so any error they pick up is carried to the end of the course, and a
 // slower move picks up less of it.
-constexpr int MISSION_ZONE_DRIVE_PWM = 100;
+constexpr int MISSION_ZONE_DRIVE_PWM = 90;
 // Lower again than MISSION_TURN_PWM. Zone turns are often 40 degrees or less,
 // which is inside turnByAngleProfiled's 35 degree decel ramp for the whole turn,
 // so the cap never reaches the flat top anyway - asking for more PWM here only
 // makes the approach to the deadband harsher.
-constexpr int MISSION_ZONE_TURN_PWM = 55;
+constexpr int MISSION_ZONE_TURN_PWM = 50;
 
 // Turns smaller than this are not worth commanding: turnByAngleProfiled settles
 // in a 1.2 degree deadband and cannot push below MIN_TURNING_PWM, so a 2 degree
@@ -95,19 +95,8 @@ inline void chainMission(Micromouse& mouse, const Command* mission, int count) {
 
         switch (action) {
             case 'f': {
-                // Swallow the whole run of forwards and drive it as one move, for
-                // the reason chainMovement does: one accel and one decel instead
-                // of one per cell, and one chance to pick up heading error
-                // instead of one per cell.
-                int cells = 1;
-                while (i + 1 < count && mission[i + 1].action == 'f') {
-                    cells++;
-                    i++;
-                }
-
                 Serial.print(F("forward x"));
-                Serial.println(cells);
-                mouse.driveDistanceCruiseLidar(cells * MISSION_CELL_DISTANCE,
+                mouse.driveDistanceCruiseFrontSeek(MISSION_CELL_DISTANCE,
                                                MISSION_DRIVE_PWM);
                 break;
             }
