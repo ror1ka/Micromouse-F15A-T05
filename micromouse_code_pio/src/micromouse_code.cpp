@@ -10,7 +10,6 @@
 #include "task4_code/DisplayMazeOled.hpp"
 #include"task4_code/task4_2ChainingMovements.hpp"
 #include "task4_code/maze_route.h"
-#include "task4_code/5x5_route.h"
 #include "task4_code/task4AutonomousMapping.hpp"
 #include"task4_code/MazeAutonomousPlanner.hpp"
 
@@ -113,17 +112,16 @@ void loop() {
   // }
 
   // task43HasRun = true;
-  // runTask4_3(mouse, maze, planner, pose, startPose, 7, 7);
-  // while(true) {}
+  runTask4_3(mouse, maze, planner, pose, startPose, 7, 7);
+  while(true) {}
 
   // mouse.printLidarToOled();
 
   /////////////
 
   // The run to perform, as a string of 'f' forward / 'l' left / 'r' right.
-  // chainMovement(mouse, "rflflfrflffrflffflflfrflffrffffrfffrfrflfflflfrfrfflflffflfrfflfrflflfrffrflflfrflfrflfflf");
- chainMission(mouse, MISSION, NUM_COMMANDS);
-//  chainMission(mouse, route_5x5, route_5x5_length);
+  // chainMovement(mouse, "ffffllffffrr");
+ //chainMission(mouse, MISSION, NUM_COMMANDS);
   // mouse.printLidar();
 
   // Other task 3 routines, for when you want to test one on its own:
@@ -134,5 +132,5 @@ void loop() {
   //   mouse.turnByAngle(-90, 70);
 
   // The run only happens once, so park here rather than repeating it.
-  while (true) {}
+  // while (true) {}
 }

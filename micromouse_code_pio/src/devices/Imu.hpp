@@ -177,10 +177,6 @@ public:
         return customAngleZ;
     }
 
-    void setHeading(float angle) {
-        customAngleZ = angle;
-    }
-
     void print() {
         Serial.print(F("\tZ : "));
         Serial.println(mpu.getAngleZ());

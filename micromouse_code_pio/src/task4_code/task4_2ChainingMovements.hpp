@@ -95,8 +95,19 @@ inline void chainMission(Micromouse& mouse, const Command* mission, int count) {
 
         switch (action) {
             case 'f': {
+                // Swallow the whole run of forwards and drive it as one move, for
+                // the reason chainMovement does: one accel and one decel instead
+                // of one per cell, and one chance to pick up heading error
+                // instead of one per cell.
+                int cells = 1;
+                while (i + 1 < count && mission[i + 1].action == 'f') {
+                    cells++;
+                    i++;
+                }
+
                 Serial.print(F("forward x"));
-                mouse.driveDistanceCruiseFrontSeek(MISSION_CELL_DISTANCE,
+                Serial.println(cells);
+                mouse.driveDistanceCruiseLidar(cells * MISSION_CELL_DISTANCE,
                                                MISSION_DRIVE_PWM);
                 break;
             }
