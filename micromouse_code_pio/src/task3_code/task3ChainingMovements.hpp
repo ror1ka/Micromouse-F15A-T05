@@ -34,7 +34,7 @@ inline void chainMovement(Micromouse& mouse, const String& chain_string) {
                 Serial.print(F("/"));
                 Serial.print(length);
                 Serial.println(F(" left"));
-                mouse.turnByAngleProfiled(TURN_LEFT, CHAIN_TURN_PWM);
+                mouse.turnByAngleProfiled(90.463, CHAIN_TURN_PWM);
                 break;
 
             case 'r':
@@ -42,7 +42,7 @@ inline void chainMovement(Micromouse& mouse, const String& chain_string) {
                 Serial.print(F("/"));
                 Serial.print(length);
                 Serial.println(F(" right"));
-                mouse.turnByAngleProfiled(TURN_RIGHT, CHAIN_TURN_PWM);
+                mouse.turnByAngleProfiled(-90.46, CHAIN_TURN_PWM);
                 break;
 
             case 'f': {
@@ -59,7 +59,8 @@ inline void chainMovement(Micromouse& mouse, const String& chain_string) {
                 Serial.print(F(" forward x"));
                 Serial.println(cells);
 
-                mouse.driveDistanceCruiseLidar(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
+                // mouse.driveDistanceCruiseLidar(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
+                mouse.driveDistanceCruiseFrontSeek(cells * CELL_DISTANCE, CHAIN_DRIVE_PWM);
                 break;
             }
 

@@ -514,219 +514,225 @@ public:
     // is aged against odometry. Forward moves only for the trim, same as there.
     //
     // ONLY PASS A POSITIVE cruisePWM. To go backwards make targetDistance negative.
-    void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
-        PIDController distancePid(1.2f, 0.0f, 0.25f);
-        const float headingKp = 2.0f;
+void driveDistanceCruiseLidar(float targetDistance, int cruisePWM) {
+    PIDController distancePid(1.2f, 0.0f, 0.25f);
+    const float headingKp = 2.0f;
 
-        const float distanceDeadband = 3.0f;
-        const float headingDeadband = 1.5f;
+    const float distanceDeadband = 3.0f;
+    const float headingDeadband = 1.5f;
 
-        // Where the PID takes over, and how long the cruise takes to come up to
-        // speed. The handover figure is the trapezoid's decel ramp: it is the
-        // distance that version already found was enough to shed cruise speed in.
-        const float handoverDistance = 70.0f;
-        const float softStartDistance = 30.0f;
+    const float handoverDistance = 70.0f;
+    const float softStartDistance = 30.0f;
 
-        const float intLimit = 100.0f;
-        const float maxHeadingCorrection = 45.0f;
+    const float intLimit = 100.0f;
+    const float maxHeadingCorrection = 45.0f;
 
-        const float wallTrimSlew = 0.3f;
-        const float offsetRateSlew = 0.4f;
+    const float wallTrimSlew = 0.3f;
+    const float offsetRateSlew = 0.4f;
 
-        const unsigned long loopTime = 10;
-        const unsigned long timeBeforeConsideredSettled = 200;
+    const unsigned long loopTime = 10;
+    const unsigned long timeBeforeConsideredSettled = 200;
 
-        cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
-        // Capped at the cruise speed rather than MAX_PWM. The approach only ever
-        // has to come down from cruise, so there is nothing for it to do up there.
-        distancePid.setLimits(intLimit, (float)cruisePWM);
+    cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
+    distancePid.setLimits(intLimit, (float)cruisePWM);
 
-        drive.resetEnc();
+    drive.resetEnc();
+    imu.update();
+    lidar.refreshAll();
+
+    // REMOVED 'const': baseHeading must be mutable so heading injection can update it!
+    float baseHeading = getRot();
+    const float odometryZero = drive.getCurrAvgDist();
+
+    float wallTrim = 0.0f;
+    float previousOffset = 0.0f;
+    float offsetRate = 0.0f;
+    bool haveOffset = false;
+    unsigned long lastWallSample = 0;
+
+    // --- HEADING INJECTION TRACKING VARIABLES ---
+    int alignedSamples = 0;       // Counts consecutive stable samples
+    bool wasTrackingWall = false; // Tracks wall transition state
+
+    bool handedOver = false;
+
+    unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
+    float travelledAtFrontSample = 0.0f;
+
+    unsigned long previousLoopTime = millis();
+    unsigned long timeWhenInitiallySettled = 0;
+
+    while (true) {
+        unsigned long currentTime = millis();
+        if (currentTime - previousLoopTime < loopTime) {
+            continue;
+        }
+        previousLoopTime = currentTime;
         imu.update();
-        lidar.refreshAll();
+        lidar.poll();
 
-        const float baseHeading = getRot();
-        // Whatever resetEnc() left on the clock, so the PID measures from the same
-        // origin as `travelled` when it is seeded partway through the move.
-        const float odometryZero = drive.getCurrAvgDist();
+        const float travelled = drive.getCurrAvgDist();
 
-        float wallTrim = 0.0f;
-        float previousOffset = 0.0f;
-        float offsetRate = 0.0f;
-        bool haveOffset = false;
-        unsigned long lastWallSample = 0;
+        const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
+        if (newFrontStamp != frontStamp) {
+            frontStamp = newFrontStamp;
+            travelledAtFrontSample = travelled;
+        }
 
-        // False for the cruise phase, true once the PID has been handed the move.
-        // Latched: a front reading that pushes the stopping point back out again
-        // must not drop the robot back into open-loop cruise near a wall.
-        bool handedOver = false;
+        const float distanceError = targetDistance - travelled;
 
-        unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
-        float travelledAtFrontSample = 0.0f;
+        float remaining = distanceError;
+        bool frontLimited = false;
 
-        unsigned long previousLoopTime = millis();
-        unsigned long timeWhenInitiallySettled = 0;
-
-        while (true) {
-            unsigned long currentTime = millis();
-            if (currentTime - previousLoopTime < loopTime) {
-                continue;
-            }
-            previousLoopTime = currentTime;
-            imu.update();
-            lidar.poll();
-
-            const float travelled = drive.getCurrAvgDist();
-
-            const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
-            if (newFrontStamp != frontStamp) {
-                frontStamp = newFrontStamp;
-                travelledAtFrontSample = travelled;
-            }
-
-            const float distanceError = targetDistance - travelled;
-
-            float remaining = distanceError;
-            bool frontLimited = false;
-
-            if (targetDistance > 0) {
-                const float frontAllows =
-                    frontTravelLimit() - (travelled - travelledAtFrontSample);
-                if (frontAllows < remaining) {
-                    remaining = frontAllows;
-                    frontLimited = true;
-                }
-            }
-
-            // Distance still to run, as an unsigned quantity so the two phases can
-            // be reasoned about the same way forwards and backwards. Front-limited
-            // it stays signed, because stopping short is the point and there is no
-            // undershoot to correct.
-            const float toGo = frontLimited ? remaining : abs(distanceError);
-
-            const bool inDistDeadband = toGo <= distanceDeadband;
-
-            if (targetDistance > 0 && !inDistDeadband &&
-                currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
-                const float sampleDt = (currentTime - lastWallSample) / 1000.0f;
-                lastWallSample = currentTime;
-
-                float offset;
-                if (getWallOffset(offset)) {
-                    if (haveOffset && sampleDt > 0) {
-                        const float rate = (offset - previousOffset) / sampleDt;
-                        offsetRate = (1.0f - offsetRateSlew) * offsetRate + offsetRateSlew * rate;
-                    } else {
-                        offsetRate = 0.0f;
-                    }
-
-                    previousOffset = offset;
-                    haveOffset = true;
-
-                    float trim = WALL_TRIM_KP * offset + WALL_TRIM_KD * offsetRate;
-                    trim = constrain(trim, -MAX_WALL_TRIM, MAX_WALL_TRIM);
-                    wallTrim = (1.0f - wallTrimSlew) * wallTrim + wallTrimSlew * trim;
-                } else {
-                    haveOffset = false;
-                    offsetRate = 0.0f;
-                    wallTrim = (1.0f - wallTrimSlew) * wallTrim;
-                }
-            } else if (inDistDeadband || targetDistance <= 0) {
-                wallTrim = (1.0f - wallTrimSlew) * wallTrim;
-            }
-
-            const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
-            const bool inAngleDeadband = abs(headingError) <= headingDeadband;
-
-            // The handover. Seeding here rather than before the loop is what keeps
-            // the cruise out of the PID's history: it starts from the state the
-            // robot is actually in, with no integral from a phase it did not run.
-            if (!handedOver && toGo <= handoverDistance) {
-                handedOver = true;
-                distancePid.zeroAndSetTarget(odometryZero, targetDistance);
-
-                // zeroAndSetTarget leaves prev_error at zero, so the very next
-                // compute would read the whole remaining error as one tick's worth
-                // of change and spike the derivative. In the trapezoid that lands
-                // under the accel ramp and never reaches the motors; here there is
-                // no ramp to hide it. Prime the history with a throwaway compute so
-                // the first real one differentiates against a true previous error.
-                distancePid.compute(travelled);
-            }
-
-            float distancePWM;
-
-            if (handedOver) {
-                if (inDistDeadband) {
-                    distancePid.resetIntegral();
-                }
-                distancePWM = distancePid.compute(travelled);
-            } else {
-                // Flat at cruisePWM, eased in over softStartDistance. profileCap
-                // with no down-ramp is exactly that shape, and it floors at
-                // MIN_MOVING_PWM so the first tick still breaks stiction.
-                const float startCap =
-                    profileCap(abs(travelled), abs(remaining), softStartDistance, 0.0f,
-                               (float)cruisePWM, (float)MIN_MOVING_PWM);
-                distancePWM = (targetDistance > 0) ? startCap : -startCap;
-            }
-
-            // A wall ahead decelerates the robot in both phases. During cruise it
-            // is the only thing that will - the open-loop phase has no idea how
-            // close anything is - and during the approach it is what aims the PID
-            // at the standoff instead of at a target on the far side of the wall.
-            if (frontLimited) {
-                const float frontCap = profileCap(abs(travelled), remaining, 0.0f,
-                                                  handoverDistance, (float)cruisePWM,
-                                                  (float)MIN_MOVING_PWM);
-                distancePWM = constrain(distancePWM, -frontCap, frontCap);
-            }
-
-            if (inDistDeadband) {
-                distancePWM = 0;
-            } else if (abs(distancePWM) < MIN_MOVING_PWM) {
-                const float driveSign = frontLimited ? remaining : distanceError;
-                distancePWM = (driveSign > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
-            }
-
-            float headingPWM = headingKp * headingError;
-            headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
-
-            if (inAngleDeadband) {
-                headingPWM = 0;
-            } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
-                // Same stiction floor, and the same reason for the wider heading
-                // deadband, as driveDistanceProfiled.
-                headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
-            }
-
-            drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
-
-            if (inDistDeadband && inAngleDeadband) {
-                if (timeWhenInitiallySettled == 0) {
-                    timeWhenInitiallySettled = currentTime;
-                }
-
-                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
-                    drive.stop();
-
-                    if (frontLimited) {
-                        // +ve stopped short of the commanded distance, -ve past it.
-                        // Truncated to an int deliberately: printing a float drags
-                        // in Print's double formatting, which is several hundred
-                        // bytes of flash this firmware has not got.
-                        Serial.print(F("front wall: ended "));
-                        Serial.print((int)distanceError);
-                        Serial.println(F("mm off target"));
-                    }
-
-                    return;
-                }
-            } else {
-                timeWhenInitiallySettled = 0;
+        if (targetDistance > 0) {
+            const float frontAllows =
+                frontTravelLimit() - (travelled - travelledAtFrontSample);
+            if (frontAllows < remaining) {
+                remaining = frontAllows;
+                frontLimited = true;
             }
         }
+
+        const float toGo = frontLimited ? remaining : abs(distanceError);
+        const bool inDistDeadband = toGo <= distanceDeadband;
+
+        // =====================================================================
+        // WALL SAMPLING & HEADING INJECTION
+        // =====================================================================
+        if (targetDistance > 0 && !inDistDeadband &&
+            currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
+            const float sampleDt = (currentTime - lastWallSample) / 1000.0f;
+            lastWallSample = currentTime;
+
+            float offset;
+            if (getWallOffset(offset)) {
+                if (haveOffset && sampleDt > 0) {
+                    const float rate = (offset - previousOffset) / sampleDt;
+                    offsetRate = (1.0f - offsetRateSlew) * offsetRate + offsetRateSlew * rate;
+                } else {
+                    offsetRate = 0.0f;
+                }
+
+                previousOffset = offset;
+                haveOffset = true;
+                wasTrackingWall = true;
+
+                float trim = WALL_TRIM_KP * offset + WALL_TRIM_KD * offsetRate;
+                trim = constrain(trim, -MAX_WALL_TRIM, MAX_WALL_TRIM);
+                wallTrim = (1.0f - wallTrimSlew) * wallTrim + wallTrimSlew * trim;
+
+                // -------------------------------------------------------------
+                // INJECTION 1: Cardinal Grid Snap (Mid-Drive)
+                // If parallel (< 10mm/s) and centered (< 5mm) for 3 samples (~30ms)
+                // -------------------------------------------------------------
+                if (abs(offset) < 5.0f && abs(offsetRate) < 10.0f) {
+                    alignedSamples++;
+                    if (alignedSamples >= 3) {
+                        // Find nearest 90-degree grid angle
+                        float cardinalHeading = round(getRot() / 90.0f) * 90.0f;
+
+                        // Snap IMU and base heading to exact cardinal angle
+                        imu.setHeading(cardinalHeading);
+                        baseHeading = cardinalHeading;
+
+                        // Reset wallTrim since reference frame is now perfect
+                        wallTrim = 0.0f;
+                        alignedSamples = 0;
+                    }
+                } else {
+                    alignedSamples = 0;
+                }
+
+            } else {
+                // -------------------------------------------------------------
+                // INJECTION 2: Wall Exit Handover
+                // When wall ends, absorb wallTrim into baseHeading so the rover
+                // doesn't jerk back to an old drifted heading in open space.
+                // -------------------------------------------------------------
+                if (wasTrackingWall) {
+                    baseHeading = Imu::normaliseAngle(baseHeading + wallTrim);
+                    wallTrim = 0.0f;
+                    wasTrackingWall = false;
+                }
+
+                haveOffset = false;
+                offsetRate = 0.0f;
+                alignedSamples = 0;
+                wallTrim = (1.0f - wallTrimSlew) * wallTrim;
+            }
+        } else if (inDistDeadband || targetDistance <= 0) {
+            wallTrim = (1.0f - wallTrimSlew) * wallTrim;
+        }
+
+        const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
+        const bool inAngleDeadband = abs(headingError) <= headingDeadband;
+
+        // --- REST OF CONTROL LOOP (UNCHANGED) ---
+        if (!handedOver && toGo <= handoverDistance) {
+            handedOver = true;
+            distancePid.zeroAndSetTarget(odometryZero, targetDistance);
+            distancePid.compute(travelled);
+        }
+
+        float distancePWM;
+        if (handedOver) {
+            if (inDistDeadband) {
+                distancePid.resetIntegral();
+            }
+            distancePWM = distancePid.compute(travelled);
+        } else {
+            const float startCap =
+                profileCap(abs(travelled), abs(remaining), softStartDistance, 0.0f,
+                           (float)cruisePWM, (float)MIN_MOVING_PWM);
+            distancePWM = (targetDistance > 0) ? startCap : -startCap;
+        }
+
+        if (frontLimited) {
+            const float frontCap = profileCap(abs(travelled), remaining, 0.0f,
+                                              handoverDistance, (float)cruisePWM,
+                                              (float)MIN_MOVING_PWM);
+            distancePWM = constrain(distancePWM, -frontCap, frontCap);
+        }
+
+        if (inDistDeadband) {
+            distancePWM = 0;
+        } else if (abs(distancePWM) < MIN_MOVING_PWM) {
+            const float driveSign = frontLimited ? remaining : distanceError;
+            distancePWM = (driveSign > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
+        }
+
+        float headingPWM = headingKp * headingError;
+        headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
+
+        if (inAngleDeadband) {
+            headingPWM = 0;
+        } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
+            headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+        }
+
+        drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
+
+        if (inDistDeadband && inAngleDeadband) {
+            if (timeWhenInitiallySettled == 0) {
+                timeWhenInitiallySettled = currentTime;
+            }
+
+            if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                drive.stop();
+
+                if (frontLimited) {
+                    Serial.print(F("front wall: ended "));
+                    Serial.print((int)distanceError);
+                    Serial.println(F("mm off target"));
+                }
+
+                return;
+            }
+        } else {
+            timeWhenInitiallySettled = 0;
+        }
     }
+}
 
     // The same move with the side-LiDAR steering switched off, for stretches
     // where the side readings do not describe a corridor - an open region, or a
@@ -919,235 +925,235 @@ public:
     // which quietly reinstates the second routine this was written to avoid.
     __attribute__((noclone))
     void driveDistanceCruiseFrontSeek(float targetDistance, int cruisePWM,
-                                      bool useFrontSeek = true) {
-        PIDController distancePid(1.2f, 0.0f, 0.25f);
-        const float headingKp = 2.0f;
+                                  bool useFrontSeek = true) {
+    PIDController distancePid(1.2f, 0.0f, 0.25f);
+    const float headingKp = 2.0f;
 
-        const float distanceDeadband = 3.0f;
-        const float headingDeadband = 1.5f;
+    const float distanceDeadband = 3.0f;
+    const float headingDeadband = 1.5f;
 
-        const float handoverDistance = 70.0f;
-        const float softStartDistance = 30.0f;
+    const float handoverDistance = 70.0f;
+    const float softStartDistance = 30.0f;
 
-        const float intLimit = 100.0f;
-        const float maxHeadingCorrection = 45.0f;
+    const float intLimit = 100.0f;
+    const float maxHeadingCorrection = 45.0f;
 
-        const float wallTrimSlew = 0.3f;
-        const float offsetRateSlew = 0.4f;
+    const float wallTrimSlew = 0.3f;
+    const float offsetRateSlew = 0.4f;
 
-        // PWM asked for per mm still to close on a front wall being sought. The
-        // distance PID's Kp, so the last few centimetres onto a wall feel like
-        // every other approach here.
-        const float frontSeekKp = 1.2f;
+    const float frontSeekKp = 1.2f;
 
-        const unsigned long loopTime = 10;
-        const unsigned long timeBeforeConsideredSettled = 200;
+    const unsigned long loopTime = 10;
+    const unsigned long timeBeforeConsideredSettled = 200;
 
-        cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
-        distancePid.setLimits(intLimit, (float)cruisePWM);
+    // Safety limit: only snap IMU if measured angle is within 15 deg of target cardinal
+    const float MAX_ALLOWABLE_DRIFT_ERR = 15.0f; 
 
-        drive.resetEnc();
+    cruisePWM = constrain(abs(cruisePWM), MIN_MOVING_PWM, MAX_PWM);
+    distancePid.setLimits(intLimit, (float)cruisePWM);
+
+    drive.resetEnc();
+    imu.update();
+    lidar.refreshAll();
+
+    // Start with current measured heading so soft-start does not stutter
+    float baseHeading = getRot();
+    const float odometryZero = drive.getCurrAvgDist();
+
+    float wallTrim = 0.0f;
+    float previousOffset = 0.0f;
+    float offsetRate = 0.0f;
+    bool haveOffset = false;
+    unsigned long lastWallSample = 0;
+
+    // Consecutive parallel sample counter for safe injection
+    int alignedSamples = 0;
+
+    bool handedOver = false;
+
+    unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
+    float travelledAtFrontSample = 0.0f;
+
+    unsigned long previousLoopTime = millis();
+    unsigned long timeWhenInitiallySettled = 0;
+
+    while (true) {
+        unsigned long currentTime = millis();
+        if (currentTime - previousLoopTime < loopTime) {
+            continue;
+        }
+        previousLoopTime = currentTime;
         imu.update();
-        lidar.refreshAll();
+        lidar.poll();
 
-        // The MEASURED heading, so a move always starts with ~0 heading error.
-        //
-        // Do not "improve" this to the commanded heading (targetGlobalHeading).
-        // It was tried, on the reasoning that a move could spend its length
-        // taking out the residual the turn before it left behind. What actually
-        // happens is that the move starts with a real heading error, and the
-        // heading term is a differential on top of the drive term:
-        //
-        //     setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM)
-        //
-        // At the start of a move distancePWM is the soft-start floor, 40, while
-        // maxHeadingCorrection is 45. A few degrees of starting error is enough
-        // to drive one wheel BACKWARDS - the robot pivots on the spot, shuffles
-        // back and forth, and parallel-parks its way out of the cell instead of
-        // driving off. The turn is the right place to fix heading; a drive's job
-        // is to hold whatever the turn achieved.
-        const float baseHeading = getRot();
-        const float odometryZero = drive.getCurrAvgDist();
+        const float travelled = drive.getCurrAvgDist();
 
-        float wallTrim = 0.0f;
-        float previousOffset = 0.0f;
-        float offsetRate = 0.0f;
-        bool haveOffset = false;
-        unsigned long lastWallSample = 0;
+        const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
+        if (newFrontStamp != frontStamp) {
+            frontStamp = newFrontStamp;
+            travelledAtFrontSample = travelled;
+        }
 
-        bool handedOver = false;
+        const float distanceError = targetDistance - travelled;
 
-        unsigned long frontStamp = lidar.readingStamp(LidarArray::Front);
-        float travelledAtFrontSample = 0.0f;
+        float remaining = distanceError;
+        bool frontLimited = false;
+        bool frontGuided = false;
 
-        unsigned long previousLoopTime = millis();
-        unsigned long timeWhenInitiallySettled = 0;
+        if (targetDistance > 0) {
+            const float frontAllows =
+                frontTravelLimit() - (travelled - travelledAtFrontSample);
 
-        while (true) {
-            unsigned long currentTime = millis();
-            if (currentTime - previousLoopTime < loopTime) {
-                continue;
-            }
-            previousLoopTime = currentTime;
-            imu.update();
-            lidar.poll();
-
-            const float travelled = drive.getCurrAvgDist();
-
-            const unsigned long newFrontStamp = lidar.readingStamp(LidarArray::Front);
-            if (newFrontStamp != frontStamp) {
-                frontStamp = newFrontStamp;
-                travelledAtFrontSample = travelled;
-            }
-
-            const float distanceError = targetDistance - travelled;
-
-            float remaining = distanceError;
-            bool frontLimited = false;
-            // True while the front wall, rather than the odometry, is the thing
-            // the robot is closing on.
-            bool frontGuided = false;
-
-            if (targetDistance > 0) {
-                const float frontAllows =
-                    frontTravelLimit() - (travelled - travelledAtFrontSample);
-
-                if (useFrontSeek && frontAllows <= FRONT_SEEK_WINDOW - FRONT_STOP_DISTANCE) {
-                    // A wall inside the seek band. It owns the end of the move in
-                    // both directions now - the robot closes on the standoff even
-                    // if that means running past the distance it was asked for.
-                    // The cap is what keeps one bad reading from carrying it into
-                    // the next cell: past that, the distance target wins again.
-                    remaining = min(frontAllows, distanceError + MAX_FRONT_SEEK_OVERSHOOT);
-                    frontLimited = true;
-                    frontGuided = true;
-                } else if (frontAllows < remaining) {
-                    remaining = frontAllows;
-                    frontLimited = true;
-                }
-            }
-
-            const float toGo = frontLimited ? remaining : abs(distanceError);
-
-            const bool inDistDeadband = toGo <= distanceDeadband;
-
-            if (targetDistance > 0 && !inDistDeadband &&
-                currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
-                const float sampleDt = (currentTime - lastWallSample) / 1000.0f;
-                lastWallSample = currentTime;
-
-                float offset;
-                if (getWallOffset(offset)) {
-                    if (haveOffset && sampleDt > 0) {
-                        const float rate = (offset - previousOffset) / sampleDt;
-                        offsetRate = (1.0f - offsetRateSlew) * offsetRate + offsetRateSlew * rate;
-                    } else {
-                        offsetRate = 0.0f;
-                    }
-
-                    previousOffset = offset;
-                    haveOffset = true;
-
-                    float trim = WALL_TRIM_KP * offset + WALL_TRIM_KD * offsetRate;
-                    trim = constrain(trim, -MAX_WALL_TRIM, MAX_WALL_TRIM);
-                    wallTrim = (1.0f - wallTrimSlew) * wallTrim + wallTrimSlew * trim;
-                } else {
-                    haveOffset = false;
-                    offsetRate = 0.0f;
-                    wallTrim = (1.0f - wallTrimSlew) * wallTrim;
-                }
-            } else if (inDistDeadband || targetDistance <= 0) {
-                wallTrim = (1.0f - wallTrimSlew) * wallTrim;
-            }
-
-            const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
-            const bool inAngleDeadband = abs(headingError) <= headingDeadband;
-
-            if (!handedOver && toGo <= handoverDistance) {
-                handedOver = true;
-                distancePid.zeroAndSetTarget(odometryZero, targetDistance);
-                distancePid.compute(travelled);
-            }
-
-            float distancePWM;
-
-            if (handedOver) {
-                if (inDistDeadband) {
-                    distancePid.resetIntegral();
-                }
-                distancePWM = distancePid.compute(travelled);
-            } else {
-                const float startCap =
-                    profileCap(abs(travelled), abs(remaining), softStartDistance, 0.0f,
-                               (float)cruisePWM, (float)MIN_MOVING_PWM);
-                distancePWM = (targetDistance > 0) ? startCap : -startCap;
-            }
-
-            // Seeking, the PID's fixed odometry target is the wrong thing to be
-            // steering by - it would stop the robot at `targetDistance` when the
-            // wall says to keep going, or fight to get back to it when the wall
-            // says stop early. A P term on the front-derived distance instead.
-            // The PID is still computed above, so its history stays current for
-            // the ticks after a wall drops back out of the band.
-            if (frontGuided) {
-                distancePWM = constrain(frontSeekKp * remaining,
-                                        -(float)cruisePWM, (float)cruisePWM);
-            }
-
-            if (frontLimited) {
-                const float frontCap = profileCap(abs(travelled), remaining, 0.0f,
-                                                  handoverDistance, (float)cruisePWM,
-                                                  (float)MIN_MOVING_PWM);
-                distancePWM = constrain(distancePWM, -frontCap, frontCap);
-            }
-
-            if (inDistDeadband) {
-                distancePWM = 0;
-            } else if (abs(distancePWM) < MIN_MOVING_PWM) {
-                // Which way the stiction floor should push. Whatever is deciding
-                // the stopping point decides that too: seeking a wall, the robot
-                // can be past `targetDistance` and still owe forward travel, and
-                // distanceError would have it reverse out of the move.
-                const float driveSign = frontLimited ? remaining : distanceError;
-                distancePWM = (driveSign > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
-            }
-
-            float headingPWM = headingKp * headingError;
-            headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
-
-            if (inAngleDeadband) {
-                headingPWM = 0;
-            } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
-                headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
-            }
-
-            drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
-
-            if (inDistDeadband && inAngleDeadband) {
-                if (timeWhenInitiallySettled == 0) {
-                    timeWhenInitiallySettled = currentTime;
-                }
-
-                // Front readings keep arriving through the settle window, so a
-                // seeking move that has come to rest a little short of the
-                // standoff drops back out of the deadband here and creeps again.
-                if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
-                    drive.stop();
-
-                    if (frontLimited) {
-                        Serial.print(F("front wall: ended "));
-                        Serial.print((int)distanceError);
-                        Serial.println(F("mm off target"));
-                    }
-
-                    return;
-                }
-            } else {
-                timeWhenInitiallySettled = 0;
+            if (useFrontSeek && frontAllows <= FRONT_SEEK_WINDOW - FRONT_STOP_DISTANCE) {
+                remaining = min(frontAllows, distanceError + MAX_FRONT_SEEK_OVERSHOOT);
+                frontLimited = true;
+                frontGuided = true;
+            } else if (frontAllows < remaining) {
+                remaining = frontAllows;
+                frontLimited = true;
             }
         }
-    }
 
+        const float toGo = frontLimited ? remaining : abs(distanceError);
+        const bool inDistDeadband = toGo <= distanceDeadband;
+
+        // =====================================================================
+        // WALL SAMPLING & TARGET-ANCHORED HEADING INJECTION
+        // =====================================================================
+        if (targetDistance > 0 && !inDistDeadband &&
+            currentTime - lastWallSample >= WALL_SAMPLE_INTERVAL) {
+            const float sampleDt = (currentTime - lastWallSample) / 1000.0f;
+            lastWallSample = currentTime;
+
+            float offset;
+            if (getWallOffset(offset)) {
+                if (haveOffset && sampleDt > 0) {
+                    const float rate = (offset - previousOffset) / sampleDt;
+                    offsetRate = (1.0f - offsetRateSlew) * offsetRate + offsetRateSlew * rate;
+                } else {
+                    offsetRate = 0.0f;
+                }
+
+                previousOffset = offset;
+                haveOffset = true;
+
+                float trim = WALL_TRIM_KP * offset + WALL_TRIM_KD * offsetRate;
+                trim = constrain(trim, -MAX_WALL_TRIM, MAX_WALL_TRIM);
+                wallTrim = (1.0f - wallTrimSlew) * wallTrim + wallTrimSlew * trim;
+
+                // -------------------------------------------------------------
+                // SAFE MID-DRIVE IMU SNAP
+                // 1. Centered in cell (|offset| < 5mm)
+                // 2. Parallel to wall (|offsetRate| < 10mm/s)
+                // 3. IMU angle within 15 deg of targetGlobalHeading (Safety Gate)
+                // -------------------------------------------------------------
+                float currentHeadingError = abs(Imu::normaliseAngle(getRot() - targetGlobalHeading));
+
+                if (abs(offset) < 5.0f && abs(offsetRate) < 10.0f && 
+                    currentHeadingError < MAX_ALLOWABLE_DRIFT_ERR) {
+
+                    alignedSamples++;
+                    if (alignedSamples >= 3) { // Must hold condition for ~30ms
+                        // Re-calibrate IMU and baseHeading directly to target global cardinal
+                        imu.setHeading(targetGlobalHeading);
+                        baseHeading = targetGlobalHeading;
+
+                        // Clear wallTrim now that IMU frame matches physical grid
+                        wallTrim = 0.0f;
+                        alignedSamples = 0;
+                    }
+                } else {
+                    alignedSamples = 0;
+                }
+
+            } else {
+                // Side wall lost (intersection): smooth decay of wallTrim back to 0.
+                // Do NOT add wallTrim to baseHeading.
+                haveOffset = false;
+                offsetRate = 0.0f;
+                alignedSamples = 0;
+                wallTrim = (1.0f - wallTrimSlew) * wallTrim;
+            }
+        } else if (inDistDeadband || targetDistance <= 0) {
+            wallTrim = (1.0f - wallTrimSlew) * wallTrim;
+        }
+
+        const float headingError = Imu::normaliseAngle(baseHeading + wallTrim - getRot());
+        const bool inAngleDeadband = abs(headingError) <= headingDeadband;
+
+        // --- DISTANCE CONTROL & FRONT SEEKING ---
+        if (!handedOver && toGo <= handoverDistance) {
+            handedOver = true;
+            distancePid.zeroAndSetTarget(odometryZero, targetDistance);
+            distancePid.compute(travelled);
+        }
+
+        float distancePWM;
+
+        if (handedOver) {
+            if (inDistDeadband) {
+                distancePid.resetIntegral();
+            }
+            distancePWM = distancePid.compute(travelled);
+        } else {
+            const float startCap =
+                profileCap(abs(travelled), abs(remaining), softStartDistance, 0.0f,
+                           (float)cruisePWM, (float)MIN_MOVING_PWM);
+            distancePWM = (targetDistance > 0) ? startCap : -startCap;
+        }
+
+        if (frontGuided) {
+            distancePWM = constrain(frontSeekKp * remaining,
+                                    -(float)cruisePWM, (float)cruisePWM);
+        }
+
+        if (frontLimited) {
+            const float frontCap = profileCap(abs(travelled), remaining, 0.0f,
+                                              handoverDistance, (float)cruisePWM,
+                                              (float)MIN_MOVING_PWM);
+            distancePWM = constrain(distancePWM, -frontCap, frontCap);
+        }
+
+        if (inDistDeadband) {
+            distancePWM = 0;
+        } else if (abs(distancePWM) < MIN_MOVING_PWM) {
+            const float driveSign = frontLimited ? remaining : distanceError;
+            distancePWM = (driveSign > 0) ? MIN_MOVING_PWM : -MIN_MOVING_PWM;
+        }
+
+        // --- HEADING CONTROL ---
+        float headingPWM = headingKp * headingError;
+        headingPWM = constrain(headingPWM, -maxHeadingCorrection, maxHeadingCorrection);
+
+        if (inAngleDeadband) {
+            headingPWM = 0;
+        } else if (inDistDeadband && abs(headingPWM) < MIN_TURNING_PWM) {
+            headingPWM = (headingError > 0) ? MIN_TURNING_PWM : -MIN_TURNING_PWM;
+        }
+
+        drive.setForwardPWMVelocity(distancePWM - headingPWM, distancePWM + headingPWM);
+
+        if (inDistDeadband && inAngleDeadband) {
+            if (timeWhenInitiallySettled == 0) {
+                timeWhenInitiallySettled = currentTime;
+            }
+
+            if (currentTime - timeWhenInitiallySettled >= timeBeforeConsideredSettled) {
+                drive.stop();
+
+                if (frontLimited) {
+                    Serial.print(F("front wall: ended "));
+                    Serial.print((int)distanceError);
+                    Serial.println(F("mm off target"));
+                }
+
+                return;
+            }
+        } else {
+            timeWhenInitiallySettled = 0;
+        }
+    }
+}
     // Turn by `angleToTurn` degrees under the same trapezoidal envelope, tracking
     // the absolute global heading so per-turn error does not accumulate over a
     // run - the same bookkeeping turnByAngle does.
